@@ -36,7 +36,7 @@ func NewWin(table *sttable.STTable, h, y, x int) *STWin {
 	return &STWin{
 		Table: table,
 		H:     h,
-		W:     table.Width,
+		W:     table.Width + 2, // 1 for left border, 1 for right border.
 		Y:     y,
 		X:     x,
 	}
@@ -87,10 +87,12 @@ func (sw *STWin) Populate(inFocus bool) {
 	//
 	y := 1
 	x := 1
+	win.ColorOn(stlib.BlackOnCyan)
 	for _, cell := range sw.Table.Header.Cells {
-		win.MovePrint(y, x, common.TruncateUTF8String(cell.Content, cell.Width))
+		win.MovePrint(y, x, common.TruncateAndPadUTF8String(cell.Content, cell.Width))
 		x += (cell.Width + 1)
 	}
+	win.ColorOff(stlib.BlackOnCyan)
 
 	//
 	// Print all rows.
@@ -99,7 +101,7 @@ func (sw *STWin) Populate(inFocus bool) {
 	for _, row := range sw.Table.Rows {
 		x = 1
 		for _, cell := range row.Cells {
-			win.MovePrint(y, x, common.TruncateUTF8String(cell.Content, cell.Width))
+			win.MovePrint(y, x, common.TruncateAndPadUTF8String(cell.Content, cell.Width))
 			x += (cell.Width + 1)
 		}
 		y++

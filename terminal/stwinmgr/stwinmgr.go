@@ -178,6 +178,9 @@ func getMouseClickWindow(y, x int) int {
 // responsible for managing the terminal, handling user input and refreshing
 // the windows.
 func Run() {
+	// Refresh once at start.
+	refresh()
+
 	for {
 		select {
 		case ch := <-keyChan:
