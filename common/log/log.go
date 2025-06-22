@@ -12,13 +12,13 @@ var (
 	stlog *logrus.Logger
 )
 
-// Note: This is duplicated here from common/utils.go to avoid import loop.
-func IsDebugBuild() bool {
+// Returns true if we are running in debug mode.
+func IsDebug() bool {
 	return (os.Getenv("ST_DEBUG") == "1")
 }
 
 func init() {
-	// Allocate the logger.
+	// Create a new logger instance.
 	stlog = logrus.New()
 
 	stlog.SetFormatter(&logrus.TextFormatter{
@@ -28,49 +28,65 @@ func init() {
 	})
 
 	// More verbose logging for debug builds.
-	if IsDebugBuild() {
+	if IsDebug() {
 		stlog.SetLevel(logrus.TraceLevel)
 	} else {
-		// Only log info or above for prod.
 		stlog.SetLevel(logrus.InfoLevel)
 	}
 
-	// Include file name and line number in logs, if selected.
+	// Include file name and line number in logs.
 	stlog.SetReportCaller(true)
 }
 
-// Tracef logs a message at level Trace on the standard logger.
 func Tracef(format string, args ...interface{}) {
 	stlog.Tracef(format, args...)
 }
 
-// Debugf logs a message at level Debug on the standard logger.
 func Debugf(format string, args ...interface{}) {
 	stlog.Debugf(format, args...)
 }
 
-// Infof logs a message at level Info on the standard logger.
 func Infof(format string, args ...interface{}) {
 	stlog.Infof(format, args...)
 }
 
-// Warnf logs a message at level Warn on the standard logger.
 func Warnf(format string, args ...interface{}) {
 	stlog.Warnf(format, args...)
 }
 
-// Errorf logs a message at level Error on the standard logger.
 func Errorf(format string, args ...interface{}) {
 	stlog.Errorf(format, args...)
 }
 
-// Panicf logs a message at level Panic on the standard logger.
 func Panicf(format string, args ...interface{}) {
 	stlog.Panicf(format, args...)
 }
 
-// Fatalf logs a message at level Fatal on the standard logger then the process will exit
-// with status set to 1.
+// Fatalf logs a message and causes the process to exit with a stack trace and
+// an exit code of 1. This is typically used for unrecoverable errors.
 func Fatalf(format string, args ...interface{}) {
 	stlog.Fatalf(format, args...)
+}
+
+// Use Assert for asserting for invariants. It causes the program to terminate
+// along with a useful stack trace and an error message if the condition is
+// false. In addition to the condition, it can take a variable number of
+// arguments to provide additional context about the assertion failure.
+// Disabled in non-debug builds.
+//
+// Examples:
+//
+// common.Assert(false)
+// common.Assert(err == nil, err)
+// common.Assert((value >= 0 && value <= 100), "Invalid percentage", value)
+func Assert(cond bool, msg ...interface{}) {
+	if !IsDebug() || cond {
+		return
+	}
+
+	if len(msg) != 0 {
+		Panicf("Assertion failed: %v", msg)
+	} else {
+		Panicf("Assertion failed!")
+	}
 }

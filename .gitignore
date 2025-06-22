@@ -50,3 +50,10 @@ Thumbs.db
 
 # stormgo build directory
 build/
+
+# vim swp files
+*~
+*.swp
+
+# vim tags file
+tags
