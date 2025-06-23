@@ -123,7 +123,7 @@ func InitTerminal() {
 	gc.InitPair(CyanOnBlack, gc.C_CYAN, gc.C_BLACK)
 	gc.InitPair(BlackOnCyan, gc.C_BLACK, gc.C_CYAN)
 
-	testUnicode()
+	//testUnicode()
 
 	PrintStatus("Terminal initialized successfully")
 }
