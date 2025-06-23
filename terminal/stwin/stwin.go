@@ -1,7 +1,7 @@
 package stwin
 
 import (
-	gc "github.com/gbin/goncurses"
+	gc "github.com/linuxsmiths/goncurses"
 	"github.com/stormgo/common"
 	"github.com/stormgo/common/log"
 	"github.com/stormgo/terminal/stlib"
@@ -51,6 +51,40 @@ func (sw *STWin) FallsInWindow(y, x int) bool {
 	return y >= sw.Y && y < sw.Y+sw.H && x >= sw.X && x < sw.X+sw.W
 }
 
+// Does the given (y, x) coordinate fall within any column header?
+// Returns the column index if it falls in a column header, or -1 if it does
+// not.
+func (sw *STWin) FallsInColumnHeader(y, x int) int {
+	log.Assert(y >= 0 && x >= 0, y, x)
+	log.Assert(y <= stlib.GetMaxRows() && x <= stlib.GetMaxCols(), y, x)
+
+	//
+	// Click doesn't fall in the header row.
+	// sw.Y is the border followed immediately by the header row.
+	//
+	if y != sw.Y+1 {
+		return -1
+	}
+
+	// First column header starts at sw.X + 1 (1 for the left border).
+	startCol := sw.X + 1
+	endCol := 0
+
+	hdr := sw.Table.Header.Cells
+	for i, cell := range hdr {
+		endCol = startCol + cell.Width
+
+		if x >= startCol && x < endCol {
+			return i
+		}
+
+		// Next column starts after current column, leaving one space.
+		startCol = endCol + 1
+	}
+
+	return -1
+}
+
 // Populate the window with the table contents.
 func (sw *STWin) Populate(inFocus bool) {
 	stlib.PrintStatus("Populating window %s (Y=%d, X=%d, H=%d, W=%d)",
@@ -89,7 +123,15 @@ func (sw *STWin) Populate(inFocus bool) {
 	x := 1
 	win.ColorOn(stlib.BlackOnCyan)
 	for _, cell := range sw.Table.Header.Cells {
-		win.MovePrint(y, x, common.TruncateAndPadUTF8String(cell.Content, cell.Width))
+		paddedStr := common.TruncateAndPadUTF8String(cell.Content, cell.Width)
+		win.MovePrint(y, x, paddedStr)
+
+		if cell.Sort == sttable.SortOrderAsc {
+			win.MoveAddWChar(y, x+cell.Width, '△')
+		} else if cell.Sort == sttable.SortOrderDesc {
+			win.MoveAddWChar(y, x+cell.Width, '▽')
+		}
+
 		x += (cell.Width + 1)
 	}
 	win.ColorOff(stlib.BlackOnCyan)
@@ -101,7 +143,11 @@ func (sw *STWin) Populate(inFocus bool) {
 	for _, row := range sw.Table.Rows {
 		x = 1
 		for _, cell := range row.Cells {
-			win.MovePrint(y, x, common.TruncateAndPadUTF8String(cell.Content, cell.Width))
+			// Data rows must not have sort order set.
+			log.Assert(cell.Sort == sttable.SortOrderNone, cell.Sort)
+
+			paddedStr := common.TruncateAndPadUTF8String(cell.Content, cell.Width)
+			win.MovePrint(y, x, paddedStr)
 			x += (cell.Width + 1)
 		}
 		y++
@@ -128,6 +174,32 @@ func (sw *STWin) HandleQuit() {
 
 // Called when mouse left key is pressed while this window is in focus.
 func (sw *STWin) HandleMouse(y, x int) {
-	// For now, we just log the coordinates clicked.
-	stlib.PrintStatus("Mouse clicked at (%d, %d) in window %s", y, x, sw.Table.Name)
+	colIdx := sw.FallsInColumnHeader(y, x)
+
+	stlib.PrintStatus("Mouse clicked at (%d, %d) in window %s (col: %d)",
+		y, x, sw.Table.Name, colIdx)
+
+	// If the click does not fall in a column header, do nothing.
+	if colIdx < 0 {
+		return
+	}
+
+	// else, sort the table by the clicked column.
+	cell := &sw.Table.Header.Cells[colIdx]
+
+	// Toggle the sort order for the clicked column.
+	if cell.Sort == sttable.SortOrderNone || cell.Sort == sttable.SortOrderDesc {
+		cell.Sort = sttable.SortOrderAsc
+	} else {
+		cell.Sort = sttable.SortOrderDesc
+	}
+
+	// Only one column can be sorted at a time.
+	for i := range sw.Table.Header.Cells {
+		if i != colIdx {
+			sw.Table.Header.Cells[i].Sort = sttable.SortOrderNone
+		}
+	}
+
+	sw.Table.Sort(colIdx, cell.Sort)
 }

@@ -3,7 +3,7 @@ module github.com/stormgo
 go 1.24.1
 
 require (
-	github.com/gbin/goncurses v0.0.0-20240517145248-be6a464272ae
+	github.com/linuxsmiths/goncurses v0.0.0-20250623095457-dd16934557b6
 	github.com/sirupsen/logrus v1.9.3
 )
 

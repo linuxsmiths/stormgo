@@ -3,6 +3,15 @@ package sttable
 import (
 	"github.com/stormgo/common/log"
 	"github.com/stormgo/terminal/stlib"
+	"sort"
+)
+
+type SortOrder int
+
+const (
+	SortOrderNone SortOrder = iota // No sorting applied.
+	SortOrderAsc                   // Ascending order.
+	SortOrderDesc                  // Descending order.
 )
 
 // A cell is the smallest unit of data in a table.
@@ -19,6 +28,12 @@ type STCell struct {
 	// with spaces.
 	//
 	Width int
+
+	//
+	// Sorting order for this cell, if applicable.
+	// Only the header cells can have a sorting order.
+	//
+	Sort SortOrder
 }
 
 // This represents one row of STTable.
@@ -132,4 +147,19 @@ func (st *STTable) GetColumnCount() int {
 	log.Assert(len(st.Header.Cells) > 0, st.Name)
 
 	return len(st.Header.Cells)
+}
+
+// Sort the table based on the content of the column at colIdx.
+func (st *STTable) Sort(colIdx int, order SortOrder) {
+	log.Assert(order == SortOrderAsc || order == SortOrderDesc, order)
+
+	if order == SortOrderAsc {
+		sort.Slice(st.Rows, func(i, j int) bool {
+			return st.Rows[i].Cells[colIdx].Content < st.Rows[j].Cells[colIdx].Content
+		})
+	} else {
+		sort.Slice(st.Rows, func(i, j int) bool {
+			return st.Rows[i].Cells[colIdx].Content > st.Rows[j].Cells[colIdx].Content
+		})
+	}
 }

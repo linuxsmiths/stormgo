@@ -8,8 +8,9 @@ package stlib
 
 import (
 	"os"
+	"unicode/utf8"
 
-	gc "github.com/gbin/goncurses"
+	gc "github.com/linuxsmiths/goncurses"
 	"github.com/stormgo/common/log"
 )
 
@@ -28,6 +29,38 @@ const (
 	BlackOnCyan
 )
 
+func testUnicode() {
+	maxY, maxX := Stdscr.MaxYX()
+	PrintStatus("Testing unicode characters on %dx%d terminal, <ENTER> to start, 'q' to quit",
+		maxX, maxY)
+
+	key := Stdscr.GetChar()
+	if key == 'q' || key == 'Q' {
+		return
+	}
+
+	codePoint := 0
+
+	for codePoint < 0x10FFFF {
+		for y := 0; y < maxY-2; y++ {
+			for x := 0; x < maxX; x++ {
+				if utf8.ValidRune(rune(codePoint)) {
+					Stdscr.MoveAddWChar(y, x, gc.WChar(codePoint))
+				}
+				codePoint++
+			}
+		}
+
+		Stdscr.Refresh()
+
+		PrintStatus("<ENTER> for next page, 'q' to quit")
+		key = Stdscr.GetChar()
+		if key == 'q' || key == 'Q' {
+			break
+		}
+	}
+}
+
 // Initialize the ncurses terminal.
 func InitTerminal() {
 	// Must be called only once.
@@ -41,6 +74,17 @@ func InitTerminal() {
 	}
 
 	PrintStatus("ncurses initialized successfully")
+
+	//
+	// Require a minimum terminal size of 80x20.
+	// TODO: Once we learn more about the usecase, we can make this
+	//       configurable, or relax it. Till then avoid surprises.
+	//
+	minY, minX := 20, 80
+	maxY, maxX := Stdscr.MaxYX()
+	if maxY < minY || maxX < minX {
+		log.Fatalf("Need at least %dx%d terminal size, got %dx%d", minX, minY, maxX, maxY)
+	}
 
 	if !gc.HasColors() {
 		log.Fatalf("Requires a terminal that supports colors")
@@ -75,6 +119,8 @@ func InitTerminal() {
 	gc.InitPair(GreenOnBlack, gc.C_GREEN, gc.C_BLACK)
 	gc.InitPair(CyanOnBlack, gc.C_CYAN, gc.C_BLACK)
 	gc.InitPair(BlackOnCyan, gc.C_BLACK, gc.C_CYAN)
+
+	testUnicode()
 
 	PrintStatus("Terminal initialized successfully")
 }

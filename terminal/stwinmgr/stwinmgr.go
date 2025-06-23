@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	gc "github.com/gbin/goncurses"
+	gc "github.com/linuxsmiths/goncurses"
 	"github.com/stormgo/common/log"
 	"github.com/stormgo/terminal/stlib"
 	"github.com/stormgo/terminal/stwin"
@@ -185,8 +185,10 @@ func Run() {
 		select {
 		case ch := <-keyChan:
 			HandleInput(ch)
+			refresh()
 		case mevt := <-mouseChan:
 			HandleMouse(mevt)
+			refresh()
 		case <-time.After(time.Duration(refreshIntervalSec) * time.Second):
 			refresh()
 		}

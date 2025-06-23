@@ -1,8 +1,8 @@
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/gbin/goncurses v0.0.0-20240517145248-be6a464272ae h1:WeLSOuEYiwcuwg39YirhW0DibOkTztefXCTau5sSbyc=
-github.com/gbin/goncurses v0.0.0-20240517145248-be6a464272ae/go.mod h1:dmRjyC3ZOQQ4EXWMOIAQi0TLaJPcg61LFsJ9mvhSGRE=
+github.com/linuxsmiths/goncurses v0.0.0-20250623095457-dd16934557b6 h1:ZIvjueAA8Jtc0WLf2w/9VScGTsK/m+25j3Bl3Lw5dCI=
+github.com/linuxsmiths/goncurses v0.0.0-20250623095457-dd16934557b6/go.mod h1:KH2BOBtb9BTrp2seJOVpA3OonScdNJSWU9BCNF0c0Gs=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/sirupsen/logrus v1.9.3 h1:dueUQJ1C2q9oE3F7wvmSGAaVtTmUizReu6fjN8uqzbQ=

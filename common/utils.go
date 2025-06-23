@@ -2,6 +2,7 @@ package common
 
 import (
 	"fmt"
+	"github.com/stormgo/common/log"
 	"unicode/utf8"
 )
 
@@ -11,7 +12,16 @@ import (
 func TruncateAndPadUTF8String(s string, maxRunes int) string {
 	paddedString := fmt.Sprintf("%*s", maxRunes, s)
 
-	if utf8.RuneCountInString(paddedString) <= maxRunes {
+	runeCount := utf8.RuneCountInString(paddedString)
+	log.Assert(runeCount >= maxRunes, runeCount, maxRunes)
+	//
+	// We don't expect non-ascii characters to be present in the padded
+	// string. If we need to support non-ascii characters, we should extend
+	// the goncurses package.
+	//
+	log.Assert(runeCount == len(paddedString), runeCount, len(paddedString), paddedString)
+
+	if runeCount == maxRunes {
 		return paddedString
 	}
 
