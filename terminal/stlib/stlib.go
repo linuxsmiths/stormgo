@@ -90,11 +90,14 @@ func InitTerminal() {
 		log.Fatalf("Requires a terminal that supports colors")
 	}
 
-	gc.Echo(false)      // Don't echo while we do getch().
-	gc.CBreak(true)     // Line buffering disabled.
-	gc.Cursor(0)        // Hide the cursor.
-	Stdscr.Keypad(true) // Enable special keys to be captured.
+	gc.Echo(false)  // Don't echo while we do getch().
+	gc.CBreak(true) // Line buffering disabled.
+	gc.Cursor(0)    // Hide the cursor.
+	//
+	// Enable special keys to be captured.
 	// Needed for mouse support and function keys.
+	//
+	Stdscr.Keypad(true)
 
 	// Must be called after Init but before using any colour related functions
 	if err := gc.StartColor(); err != nil {

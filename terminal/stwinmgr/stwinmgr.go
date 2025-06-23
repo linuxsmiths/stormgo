@@ -70,6 +70,8 @@ func infocusWindow() *stwin.STWin {
 // with data, and then paints them using panels for proper stacking and
 // visibility.
 func refresh() {
+	panels := make([]*gc.Panel, len(winmgr.Windows))
+
 	for i := len(winmgr.Windows) - 1; i >= 0; i-- {
 		win := winmgr.Windows[i]
 		stlib.PrintStatus("Populating window %d/%d <%s>",
@@ -77,12 +79,19 @@ func refresh() {
 
 		// Populate the window with data from the STTable.
 		win.Populate(i == 0 /* inFocus */)
+		// Populate() must set win.Window to a valid goncurses window.
+		log.Assert(win.Window != nil)
 		// Create a new panel and place it at the top of the stack.
-		gc.NewPanel(win.Window)
+		panels[i] = gc.NewPanel(win.Window)
 	}
 
 	gc.UpdatePanels()
 	gc.Update()
+
+	for i := 0; i < len(panels); i++ {
+		err := panels[i].Delete()
+		log.Assert(err == nil, "Failed to delete panel: %v", err)
+	}
 }
 
 func AddWindow(win *stwin.STWin) {
