@@ -33,6 +33,17 @@ func NewWin(table *sttable.STTable, h, y, x int) *STWin {
 	log.Assert(table.Width > 0)
 	log.Assert(table.Name != "")
 
+	//
+	// Catch unlikely windows that extend outside the terminal.
+	// These are not useful and it's not something user wants.
+	//
+	log.Assert(y+h <= stlib.GetMaxRows(),
+		"Window extends outside terminal (more rows)",
+		table.Name, y, h, stlib.GetMaxRows())
+	log.Assert(x+table.Width+2 <= stlib.GetMaxCols(),
+		"Window extends outside terminal (more cols)",
+		table.Name, x, table.Width+2, stlib.GetMaxCols())
+
 	return &STWin{
 		Table: table,
 		H:     h,
@@ -151,6 +162,12 @@ func (sw *STWin) Populate(inFocus bool) {
 			x += (cell.Width + 1)
 		}
 		y++
+	}
+
+	if sw.Window != nil {
+		// Free up the memory allocated for the previous window by cgo.
+		err := sw.Window.Delete()
+		log.Assert(err == nil, err)
 	}
 
 	sw.Window = win

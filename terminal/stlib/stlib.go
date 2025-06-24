@@ -15,8 +15,21 @@ import (
 )
 
 var (
+	//
 	// The root window of the terminal.
+	// We use it only to find terminal size and clearing the screen.
+	// When this is refreshed, either explicitly or implicitly by GetChar(),
+	// it overlays the stdscr on the screen which is not what we want, hence
+	// we simply stay away from this.
+	//
 	Stdscr *gc.Window
+
+	//
+	// One line status window at the bottom of the terminal.
+	// To avoid unwanted updates to screen by stdscr.GetChar() implicitly
+	// refreshing the terminal, we use StatusWindow for reading input too.
+	//
+	StatusWindow *gc.Window
 )
 
 // Color pairs used in the terminal.
@@ -73,8 +86,6 @@ func InitTerminal() {
 		log.Fatalf("Failed to initialize ncurses: %v", err)
 	}
 
-	PrintStatus("ncurses initialized successfully")
-
 	//
 	// Require a minimum terminal size of 80x20.
 	// TODO: Once we learn more about the usecase, we can make this
@@ -86,6 +97,20 @@ func InitTerminal() {
 		log.Fatalf("Need at least %dx%d terminal size, got %dx%d", minX, minY, maxX, maxY)
 	}
 
+	//
+	// Setup the status window early on to emit important status messages.
+	// It's a one line window at the bottom of the terminal.
+	// Now PrintStatus() can be called.
+	//
+	StatusWindow, err = gc.NewWindow(1, maxX, maxY-1, 0)
+	if err != nil {
+		log.Fatalf("Failed to create status window: %v", err)
+	}
+
+	PrintStatus("ncurses initialized successfully")
+
+	ClearScreen()
+
 	if !gc.HasColors() {
 		log.Fatalf("Requires a terminal that supports colors")
 	}
@@ -96,8 +121,9 @@ func InitTerminal() {
 	//
 	// Enable special keys to be captured.
 	// Needed for mouse support and function keys.
+	// Note that we perform GetChar() on StatusWindow and not Stdscr.
 	//
-	Stdscr.Keypad(true)
+	StatusWindow.Keypad(true)
 
 	// Must be called after Init but before using any colour related functions
 	if err := gc.StartColor(); err != nil {
@@ -154,17 +180,17 @@ func GetMaxCols() int {
 // The status line is printed in the bottom row of the terminal.
 func PrintStatus(format string, params ...interface{}) {
 	// Must be called only after ncurses has been initialized.
-	log.Assert(Stdscr != nil)
+	log.Assert(StatusWindow != nil)
 	log.Assert(len(format) > 0)
 
 	if len(params) == 0 {
-		Stdscr.MovePrintf(GetMaxRows()-1, 0, ">> "+format)
+		StatusWindow.MovePrintf(0, 0, ">> "+format)
 	} else {
-		Stdscr.MovePrintf(GetMaxRows()-1, 0, ">> "+format, params...)
+		StatusWindow.MovePrintf(0, 0, ">> "+format, params...)
 	}
 
-	Stdscr.ClearToEOL()
-	Stdscr.Refresh()
+	StatusWindow.ClearToEOL()
+	StatusWindow.Refresh()
 }
 
 func ClearScreen() {

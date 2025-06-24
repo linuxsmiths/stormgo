@@ -11,12 +11,12 @@ import (
 func main() {
 	log.Debugf("Starting terminal...")
 
+	// Initialize ncurses.
 	stlib.InitTerminal()
 	defer stlib.EndTerminal()
 
+	// Initialize the window manager.
 	stwinmgr.Start()
-
-	stlib.ClearScreen()
 
 	table1 := sttable.NewTable("table1")
 	table1.AddHeader([]sttable.STCell{
@@ -51,6 +51,9 @@ func main() {
 
 	win3 := stwin.NewWin(table2, table2.GetRowCount()+3, 10, 10)
 	stwinmgr.AddWindow(win3)
+
+	win4 := stwin.NewWin(table1, table1.GetRowCount()+3, 1, 30)
+	stwinmgr.AddWindow(win4)
 
 	//
 	// Run the window manager to handle events and periodically refresh the

@@ -1,8 +1,8 @@
 package stwinmgr
 
 import (
+	"slices"
 	"sync"
-	"time"
 
 	gc "github.com/linuxsmiths/goncurses"
 	"github.com/stormgo/common/log"
@@ -79,8 +79,10 @@ func refresh() {
 
 		// Populate the window with data from the STTable.
 		win.Populate(i == 0 /* inFocus */)
+
 		// Populate() must set win.Window to a valid goncurses window.
 		log.Assert(win.Window != nil)
+
 		// Create a new panel and place it at the top of the stack.
 		panels[i] = gc.NewPanel(win.Window)
 	}
@@ -98,6 +100,8 @@ func AddWindow(win *stwin.STWin) {
 	// goncurses must have been initialized.
 	log.Assert(stlib.Stdscr != nil)
 	log.Assert(win != nil)
+	// Same window must not be added more than once.
+	log.Assert(!slices.Contains(winmgr.Windows, win), win.Table.Name)
 
 	// Adds the window to the top of the stack.
 	winmgr.Windows = append(winmgr.Windows, win)
@@ -190,17 +194,33 @@ func Run() {
 	// Refresh once at start.
 	refresh()
 
+	//
+	// GetChar() should come out every refreshIntervalSec, so that we can
+	// refresh the windows periodically.
+	//
+	stlib.StatusWindow.Timeout(refreshIntervalSec * 1000)
+
 	for {
-		select {
-		case ch := <-keyChan:
-			HandleInput(ch)
-			refresh()
-		case mevt := <-mouseChan:
-			HandleMouse(mevt)
-			refresh()
-		case <-time.After(time.Duration(refreshIntervalSec) * time.Second):
-			refresh()
+		ch := stlib.StatusWindow.GetChar()
+
+		if ch != 0 {
+			stlib.PrintStatus("Got key: %s", gc.KeyString(ch))
+			if ch == gc.KEY_MOUSE {
+				mevt := gc.GetMouse()
+				//
+				// TODO: See why we are getting nil mouse events sometimes.
+				//
+				if mevt != nil {
+					stlib.PrintStatus("Got mouse event: %+v", *mevt)
+					HandleMouse(mevt)
+				}
+			} else {
+				HandleInput(ch)
+			}
 		}
+
+		// Refresh all the windows periodically or after a key/mouse event.
+		refresh()
 	}
 }
 
@@ -233,33 +253,6 @@ func HandleMouse(mevt *gc.MouseEvent) {
 
 func Start() {
 	winmgr = newWinMgr()
-	//
-	// Spawn a goroutine to gather user input (keyboard or mouse) and pass it
-	// on to the runner goroutine, over the input channel.
-	// This should be the only goroutine that reads the terminal/mouse events.
-	//
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
-		for {
-			ch := stlib.Stdscr.GetChar()
-
-			stlib.PrintStatus("Queueing input: %s", gc.KeyString(ch))
-			if ch == gc.KEY_MOUSE {
-				mevt := gc.GetMouse()
-				//
-				// TODO: See why we are getting nil mouse events sometimes.
-				//
-				if mevt != nil {
-					stlib.PrintStatus("Got mouse event: %+v", *mevt)
-					mouseChan <- mevt
-				}
-			} else {
-				keyChan <- ch
-			}
-		}
-	}()
 }
 
 func End() {
