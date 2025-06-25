@@ -1,6 +1,7 @@
 package stwinmgr
 
 import (
+	"math"
 	"slices"
 	"sync"
 
@@ -45,13 +46,31 @@ type STWinMgr struct {
 	// clicking on it with the mouse.
 	//
 	Windows []*stwin.STWin
+
+	//
+	// Mouse press/release info, for supporting click, and dragging.
+	// MousePressWinIdx is the index of the window where the mouse was
+	// pressed. -2 means the mouse is not currently pressed, -1 means the
+	// mouse was pressed in a place where there was no window.
+	//
+	MousePressWinIdx int
+	MousePressY      int // Y coordinate of the mouse press, -1 if not currently pressed.
+	MousePressX      int // X coordinate of the mouse press, -1 if not currently pressed.
+	MouseDragX       int // X coordinate of the mouse drag, -1 if not currently dragging.
+	MouseDragY       int // Y coordinate of the mouse drag, -1 if not currently dragging.
 }
 
 func newWinMgr() *STWinMgr {
 	// Must be called only once.
 	log.Assert(winmgr == nil)
 
-	return &STWinMgr{}
+	return &STWinMgr{
+		MousePressWinIdx: -2,
+		MousePressY:      -1,
+		MousePressX:      -1,
+		MouseDragX:       -1,
+		MouseDragY:       -1,
+	}
 }
 
 func infocusWindow() *stwin.STWin {
@@ -74,8 +93,8 @@ func refresh() {
 
 	for i := len(winmgr.Windows) - 1; i >= 0; i-- {
 		win := winmgr.Windows[i]
-		stlib.PrintStatus("Populating window %d/%d <%s>",
-			i+1, len(winmgr.Windows), win.Table.Name)
+		//stlib.PrintStatus("Populating window[H=%d, W=%d, Y=%d, X=%d] %d/%d <%s>",
+		//	win.H, win.W, win.Y, win.X, i+1, len(winmgr.Windows), win.Table.Name)
 
 		// Populate the window with data from the STTable.
 		win.Populate(i == 0 /* inFocus */)
@@ -185,6 +204,169 @@ func getMouseClickWindow(y, x int) int {
 	return idx
 }
 
+func HandleMouseLeftButtonPress(y, x int) {
+	//
+	// An already pressed mouse cannot be pressed again without releasing it
+	// first.
+	//
+	log.Assert(winmgr.MousePressWinIdx == -2, winmgr.MousePressWinIdx)
+	log.Assert(winmgr.MousePressY == -1, winmgr.MousePressY)
+	log.Assert(winmgr.MousePressX == -1, winmgr.MousePressX)
+
+	// Find the window that was clicked based on the mouse coordinates (y, x).
+	idx := getMouseClickWindow(y, x)
+	winmgr.MousePressWinIdx = idx
+
+	// Note the x and y coordinates of the mouse press.
+	winmgr.MousePressY = y
+	winmgr.MousePressX = x
+
+	// Mouse clicked outside all windows, nothing to do.
+	if idx == -1 {
+		stlib.PrintStatus("Left mouse button press at (%d, %d), over no window", y, x)
+		return
+	}
+
+	clickedWindow := winmgr.Windows[idx]
+	stlib.PrintStatus("Left mouse button press at (%d, %d), window: %s (index: %d)",
+		y, x, clickedWindow.Table.Name, idx)
+}
+
+func HandleMouseLeftButtonRelease(y, x int) {
+	//
+	// Only a pressed mouse button can be released.
+	//
+	log.Assert(winmgr.MousePressWinIdx != -2, winmgr.MousePressWinIdx)
+	log.Assert(winmgr.MousePressY != -1, winmgr.MousePressY)
+	log.Assert(winmgr.MousePressX != -1, winmgr.MousePressX)
+
+	idx := winmgr.MousePressWinIdx
+
+	//
+	// Button no longer pressed.
+	// Reset these values, but just before returning, since we need to use
+	// these values to determine if this is a click or a drag and by how much
+	// did the mouse move.
+	//
+	defer func() {
+		winmgr.MousePressWinIdx = -2
+		winmgr.MousePressY = -1
+		winmgr.MousePressX = -1
+		winmgr.MouseDragY = -1
+		winmgr.MouseDragX = -1
+	}()
+
+	if idx == -1 {
+		stlib.PrintStatus("Left mouse button released at (%d, %d), pressed over no window",
+			y, x)
+		return
+	}
+
+	clickedWindow := winmgr.Windows[idx]
+
+	deltaY := y - winmgr.MousePressY
+	deltaX := x - winmgr.MousePressX
+
+	//
+	// If the mouse was clicked and released at the same position, it implies
+	// a click event, not a drag.
+	//
+	if deltaY == 0 && deltaX == 0 {
+		stlib.PrintStatus("Left mouse button clicked at (%d, %d), window: %s (index: %d)",
+			y, x, clickedWindow.Table.Name, idx)
+		RefocusOnMouseClick(y, x)
+		return
+	}
+
+	//
+	// If it's not a click, but a drag, we must have updated drag coordinates.
+	//
+	log.Assert(winmgr.MouseDragY != -1 && winmgr.MouseDragX != -1,
+		winmgr.MouseDragY, winmgr.MouseDragX)
+
+	//
+	// We don't update on release, rather we must have updated on mouse
+	// move/drag events.
+	//
+	stlib.PrintStatus("Left mouse button dragged and released at (%d[%d], %d[%d]), window: %s (index: %d)",
+		y, deltaY, x, deltaX, clickedWindow.Table.Name, idx)
+
+	deltaY = int(math.Abs(float64(y - winmgr.MouseDragY)))
+	deltaX = int(math.Abs(float64(x - winmgr.MouseDragX)))
+
+	//
+	// We must have updated drag coordinates in HandleMouseLeftButtonDrag() so
+	// in HandleMouseLeftButtonRelease() we must not see too big a difference.
+	//
+	log.Assert(deltaY <= 2, deltaY)
+	log.Assert(deltaX <= 2, deltaX)
+}
+
+func HandleMouseLeftButtonDrag(y, x int) {
+	//
+	// Dragging without pressing, don't do anything.
+	//
+	if winmgr.MousePressWinIdx == -2 {
+		stlib.PrintStatus("Left mouse button drag (%d, %d), w/o button press",
+			y, x)
+		return
+	}
+
+	log.Assert(winmgr.MousePressY != -1, winmgr.MousePressY)
+	log.Assert(winmgr.MousePressX != -1, winmgr.MousePressX)
+
+	idx := winmgr.MousePressWinIdx
+
+	// Drag while clicked over no window, nothing to do.
+	if idx == -1 {
+		stlib.PrintStatus("Left mouse button drag (%d, %d), button pressed over no window",
+			y, x)
+		return
+	}
+
+	clickedWindow := winmgr.Windows[idx]
+	stlib.PrintStatus("Left mouse button drag (%d, %d) button pressed over window: %s (index: %d)",
+		y, x, clickedWindow.Table.Name, idx)
+
+	deltaX := 0
+	deltaY := 0
+
+	// Either none of the drag coordinates are set, or both are set.
+	log.Assert((winmgr.MouseDragY == -1 && winmgr.MouseDragX == -1) ||
+		(winmgr.MouseDragY != -1 && winmgr.MouseDragX != -1),
+		winmgr.MouseDragX, winmgr.MouseDragY)
+
+	//
+	// if this is the first drag event after the click, take delta from the
+	// clicked position, else take delta from the last drag position.
+	//
+	if winmgr.MouseDragY == -1 || winmgr.MouseDragX == -1 {
+		deltaY = y - winmgr.MousePressY
+		deltaX = x - winmgr.MousePressX
+	} else {
+		deltaY = y - winmgr.MouseDragY
+		deltaX = x - winmgr.MouseDragX
+	}
+
+	clickedWindow.Y += deltaY
+	clickedWindow.X += deltaX
+
+	if clickedWindow.Y < 0 {
+		clickedWindow.Y = 0
+	} else if clickedWindow.Y+clickedWindow.H >= stlib.GetMaxRows() {
+		clickedWindow.Y = stlib.GetMaxRows() - clickedWindow.H
+	}
+
+	if clickedWindow.X < 0 {
+		clickedWindow.X = 0
+	} else if clickedWindow.X+clickedWindow.W >= stlib.GetMaxCols() {
+		clickedWindow.X = stlib.GetMaxCols() - clickedWindow.W
+	}
+
+	winmgr.MouseDragY = y
+	winmgr.MouseDragX = x
+}
+
 // This function runs indefinitely, processing user input and refreshing the
 // windows periodically.
 // This MUST be called by one one thread, and that thread is solely
@@ -248,7 +430,22 @@ func HandleInput(ch gc.Key) {
 
 func HandleMouse(mevt *gc.MouseEvent) {
 	log.Assert(mevt != nil)
-	RefocusOnMouseClick(mevt.Y, mevt.X)
+	log.Assert(mevt.X >= 0 && mevt.X <= stlib.GetMaxCols(), mevt.X, stlib.GetMaxCols())
+	// +1 as GetMaxRows() returns one less row.
+	log.Assert(mevt.Y >= 0 && mevt.Y <= stlib.GetMaxRows()+1, mevt.Y, stlib.GetMaxRows())
+
+	stlib.PrintStatus("Mouse event: %+v", *mevt)
+
+	// Left mouse button click.
+	if mevt.State&gc.M_B1_CLICKED != 0 {
+		RefocusOnMouseClick(mevt.Y, mevt.X)
+	} else if mevt.State&gc.M_B1_PRESSED != 0 {
+		HandleMouseLeftButtonPress(mevt.Y, mevt.X)
+	} else if mevt.State&gc.M_B1_RELEASED != 0 {
+		HandleMouseLeftButtonRelease(mevt.Y, mevt.X)
+	} else if mevt.State&gc.M_POSITION != 0 {
+		HandleMouseLeftButtonDrag(mevt.Y, mevt.X)
+	}
 }
 
 func Start() {

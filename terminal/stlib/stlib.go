@@ -7,6 +7,7 @@ package stlib
 //
 
 import (
+	"fmt"
 	"os"
 	"unicode/utf8"
 
@@ -125,6 +126,12 @@ func InitTerminal() {
 	//
 	StatusWindow.Keypad(true)
 
+	//
+	// This terminal sequence enables mouse drag event reporting.
+	// https://gist.github.com/sylt/93d3f7b77e7f3a881603
+	//
+	fmt.Printf("\033[?1003h\n")
+
 	// Must be called after Init but before using any colour related functions
 	if err := gc.StartColor(); err != nil {
 		log.Fatalf("Failed to start color support: %v", err)
@@ -137,11 +144,17 @@ func InitTerminal() {
 	//
 	// Enable mouse left button press.
 	// This is only mouse button that we will use for refocussing and sorting.
+	// For Window resize and dragging we need to enable all mouse events.
 	//
-	gc.MouseMask(gc.M_B1_PRESSED, nil)
+	//gc.MouseMask(gc.M_B1_PRESSED, nil)
+	gc.MouseMask(gc.M_ALL|gc.M_POSITION, nil)
 
-	// Adjust the default mouse-click sensitivity to make it more responsive
-	gc.MouseInterval(50)
+	//
+	// We don't process mouse click event, we only process press and release.
+	// Press and release if not interleaved with drag will be treated as a
+	// click.
+	//
+	gc.MouseInterval(0)
 
 	// Setup various color pairs we are going to use.
 	gc.InitPair(RedOnBlack, gc.C_RED, gc.C_BLACK)
@@ -157,6 +170,8 @@ func InitTerminal() {
 // EndTerminal cleans up the terminal and exits the program.
 func EndTerminal() {
 	gc.End()
+	// Disable mouse drag event reporting.
+	fmt.Printf("\033[?1003l\n")
 	os.Exit(0)
 }
 
@@ -165,7 +180,9 @@ func GetMaxRows() int {
 	log.Assert(Stdscr != nil)
 
 	maxY, _ := Stdscr.MaxYX()
-	return maxY
+
+	// We return maxY - 1 because the last row is used for status window.
+	return maxY - 1
 }
 
 func GetMaxCols() int {

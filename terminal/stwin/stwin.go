@@ -57,7 +57,8 @@ func NewWin(table *sttable.STTable, h, y, x int) *STWin {
 func (sw *STWin) FallsInWindow(y, x int) bool {
 	log.Assert(y >= 0 && x >= 0, y, x)
 	// Impossibly high values.
-	log.Assert(y < 1000 && x < 1000, y, x)
+	log.Assert(y <= stlib.GetMaxRows() && x <= stlib.GetMaxCols(),
+		y, x, stlib.GetMaxRows(), stlib.GetMaxCols())
 
 	return y >= sw.Y && y < sw.Y+sw.H && x >= sw.X && x < sw.X+sw.W
 }
@@ -98,15 +99,16 @@ func (sw *STWin) FallsInColumnHeader(y, x int) int {
 
 // Populate the window with the table contents.
 func (sw *STWin) Populate(inFocus bool) {
-	stlib.PrintStatus("Populating window %s (Y=%d, X=%d, H=%d, W=%d)",
-		sw.Table.Name, sw.Y, sw.X, sw.H, sw.W)
+	//stlib.PrintStatus("Populating window %s (Y=%d, X=%d, H=%d, W=%d)",
+	//	sw.Table.Name, sw.Y, sw.X, sw.H, sw.W)
 
 	//
 	// Everytime we create a new gocurses window and populate it afresh.
 	//
 	win, err := gc.NewWindow(sw.H, sw.W, sw.Y, sw.X)
 	if err != nil {
-		log.Fatalf("gc.NewWindow failed: %v", err)
+		log.Fatalf("gc.NewWindow(H=%d, W=%d, Y=%d, X=%d), name: %s, failed: %v",
+			sw.H, sw.W, sw.Y, sw.X, sw.Table.Name, err)
 	}
 
 	//

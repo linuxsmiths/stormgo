@@ -1,9 +1,11 @@
 package log
 
 import (
+	"fmt"
 	"os"
 	"time"
 
+	gc "github.com/linuxsmiths/goncurses"
 	"github.com/sirupsen/logrus"
 )
 
@@ -83,6 +85,15 @@ func Assert(cond bool, msg ...interface{}) {
 	if !IsDebug() || cond {
 		return
 	}
+
+	//
+	// This repeats what stlib.EndTerminal() does as we want the assert log to
+	// show up in the terminal.
+	//
+	// TODO: Even with this the assert backtrace does not show up.
+	//
+	gc.End()
+	fmt.Printf("\033[?1003l\n")
 
 	if len(msg) != 0 {
 		Panicf("Assertion failed: %v", msg)
