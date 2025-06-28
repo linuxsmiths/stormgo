@@ -8,13 +8,29 @@ import (
 	"github.com/stormgo/terminal/sttable"
 )
 
+type DrawFunc func(*STWin)
+
 // This is the ST window.
 // It displays an STTable.
 type STWin struct {
 	//
 	// Table to be displayed in this window.
+	// See Draw().
 	//
 	Table *sttable.STTable
+
+	//
+	// Draw function to be called to draw the window content.
+	// If this is set, Table must not be set, and the Populate() function will
+	// not be called
+	//
+	Draw DrawFunc
+
+	//
+	// IsHelp is true if this window is a help window.
+	// Need this as golang doesn't support comparing function pointers.
+	//
+	IsHelp bool
 
 	//
 	// goncurses window, and it's height, width and starting position (top left corner).
@@ -28,29 +44,90 @@ type STWin struct {
 	Y      int
 }
 
-func NewWin(table *sttable.STTable, h, y, x int) *STWin {
+func NewWin(table *sttable.STTable, y, x int) *STWin {
 	// Table must have been properly initialized.
 	log.Assert(table.Width > 0)
 	log.Assert(table.Name != "")
 
-	//
-	// Catch unlikely windows that extend outside the terminal.
-	// These are not useful and it's not something user wants.
-	//
-	log.Assert(y+h <= stlib.GetMaxRows(),
-		"Window extends outside terminal (more rows)",
-		table.Name, y, h, stlib.GetMaxRows())
-	log.Assert(x+table.Width+2 <= stlib.GetMaxCols(),
-		"Window extends outside terminal (more cols)",
-		table.Name, x, table.Width+2, stlib.GetMaxCols())
+	log.Assert(y >= 0 && x >= 0, y, x)
+	log.Assert(y < stlib.GetMaxRows() && x < stlib.GetMaxCols(),
+		y, x, stlib.GetMaxRows(), stlib.GetMaxCols())
+
+	// 1 column each for left and right border.
+	w := table.Width + 2
+
+	// Not greater than max columns supported by terminal.
+	if x+w > stlib.GetMaxCols() {
+		log.Warnf("Window right edge (%d) exceeds max cols (%d), trimming",
+			x+w, stlib.GetMaxCols())
+		w = stlib.GetMaxCols() - x
+	}
+
+	// 1 for the heading and 1 each for the boundary lines on both sides.
+	h := table.GetRowCount() + 3
+	if y+h > stlib.GetMaxRows() {
+		log.Warnf("Window bottom edge (%d) exceeds max rows (%d), trimming",
+			y+h, stlib.GetMaxRows())
+		h = stlib.GetMaxRows() - y
+	}
 
 	return &STWin{
 		Table: table,
 		H:     h,
-		W:     table.Width + 2, // 1 for left border, 1 for right border.
+		W:     w,
 		Y:     y,
 		X:     x,
 	}
+}
+
+// NewDrawWin creates a new "draw window" with the given draw function.
+// "Draw Windows" are special type of windows which provide their own draw
+// function, they do not have a table associated with them and hence the
+// regular Populate() method cannot be used to draw them.
+//
+// 'h' and 'w' are the height and width of the window excluding the borders.
+func NewDrawWin(draw DrawFunc, w, h, y, x int) *STWin {
+	log.Assert(draw != nil, "Draw function must not be nil")
+	log.Assert(y >= 0 && x >= 0, y, x)
+	log.Assert(w >= 0 && h >= 0, w, h)
+
+	//
+	// Zero value means use full terminal size in that dimension.
+	// Subtract 2 for the borders.
+	//
+	if w == 0 {
+		w = stlib.GetMaxCols() - 2
+	}
+
+	// Not greater than max columns supported by terminal.
+	if x+w+2 > stlib.GetMaxCols() {
+		log.Warnf("Window right edge (%d) exceeds max cols (%d), trimming",
+			x+w+2, stlib.GetMaxCols())
+		w = stlib.GetMaxCols() - x - 2
+	}
+
+	if h == 0 {
+		h = stlib.GetMaxRows() - 2
+	}
+
+	// Not greater than max rows supported by terminal.
+	if y+h+2 > stlib.GetMaxRows() {
+		log.Warnf("Window bottom edge (%d) exceeds max rows (%d), trimming",
+			y+h+2, stlib.GetMaxRows())
+		h = stlib.GetMaxRows() - y - 2
+	}
+
+	return &STWin{
+		Draw: draw,
+		H:    h + 2, // 1 for top border, 1 for bottom border.
+		W:    w + 2, // 1 for left border, 1 for right border.
+		Y:    y,
+		X:    x,
+	}
+}
+
+func (sw *STWin) IsHelpWindow() bool {
+	return sw.IsHelp
 }
 
 // Does the given (y, x) coordinate fall within this window?
@@ -111,6 +188,24 @@ func (sw *STWin) Populate(inFocus bool) {
 			sw.H, sw.W, sw.Y, sw.X, sw.Table.Name, err)
 	}
 
+	if sw.Window != nil {
+		// Free up the memory allocated for the previous window by cgo.
+		err := sw.Window.Delete()
+		log.Assert(err == nil, err)
+	}
+
+	sw.Window = win
+
+	//
+	// If Draw function is set, call it to draw the window content.
+	//
+	if sw.Draw != nil {
+		log.Assert(sw.Table == nil,
+			"Table must not be set when Draw function is set")
+		sw.Draw(sw)
+		return
+	}
+
 	//
 	// Draw a box around the window.
 	// If the window is in focus, we draw it with a different color.
@@ -165,14 +260,6 @@ func (sw *STWin) Populate(inFocus bool) {
 		}
 		y++
 	}
-
-	if sw.Window != nil {
-		// Free up the memory allocated for the previous window by cgo.
-		err := sw.Window.Delete()
-		log.Assert(err == nil, err)
-	}
-
-	sw.Window = win
 }
 
 // Called when 'key' is pressed while this window is in focus.

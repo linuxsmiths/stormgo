@@ -43,16 +43,16 @@ func main() {
 	table1.AddRow([]string{"longer than width", "again longer than width"})
 
 	// 1 for the heading and 1 each for the boundary lines on both sides.
-	win1 := stwin.NewWin(table1, table1.GetRowCount()+3, 1, 0)
+	win1 := stwin.NewWin(table1, 1, 0)
 	stwinmgr.AddWindow(win1)
 
-	win2 := stwin.NewWin(table2, table2.GetRowCount()+3, 5, 5)
+	win2 := stwin.NewWin(table2, 5, 5)
 	stwinmgr.AddWindow(win2)
 
-	win3 := stwin.NewWin(table2, table2.GetRowCount()+3, 10, 10)
+	win3 := stwin.NewWin(table2, 10, 10)
 	stwinmgr.AddWindow(win3)
 
-	win4 := stwin.NewWin(table1, table1.GetRowCount()+3, 1, 30)
+	win4 := stwin.NewWin(table1, 1, 30)
 	stwinmgr.AddWindow(win4)
 
 	//

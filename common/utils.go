@@ -6,6 +6,17 @@ import (
 	"unicode/utf8"
 )
 
+func GetCopyright() []string {
+	cs := []string{}
+
+	cs = append(cs,
+		"Stormgo terminal ver 0.1.0 - Copyright (c) 2025 Nagendra S Tomar, Stormgo authors")
+	cs = append(cs,
+		"Released under GNU GPLv2")
+
+	return cs
+}
+
 // If the string is longer than maxRunes, it truncates the string to maxRunes
 // runes, else it pads the string with spaces to maxRunes runes. In either
 // case, it returns a string that is exactly maxRunes runes long.

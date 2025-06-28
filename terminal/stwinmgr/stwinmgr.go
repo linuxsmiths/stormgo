@@ -48,6 +48,11 @@ type STWinMgr struct {
 	Windows []*stwin.STWin
 
 	//
+	// Help window, if user pressed the 'h' key, else nil.
+	//
+	Help *stwin.STWin
+
+	//
 	// Mouse press/release info, for supporting click, and dragging.
 	// MousePressWinIdx is the index of the window where the mouse was
 	// pressed. -2 means the mouse is not currently pressed, -1 means the
@@ -74,6 +79,11 @@ func newWinMgr() *STWinMgr {
 }
 
 func infocusWindow() *stwin.STWin {
+	// Help window, if present, is always in focus.
+	if winmgr.Help != nil {
+		return winmgr.Help
+	}
+
 	// No windows.
 	if len(winmgr.Windows) == 0 {
 		return nil
@@ -83,12 +93,41 @@ func infocusWindow() *stwin.STWin {
 	return winmgr.Windows[0]
 }
 
+// Called when user presses 'h' key.
+func showHelp() {
+	//
+	// Create the help window if it doesn't exist.
+	// Help window is a "draw window" i.e., it has its own draw function and
+	// doesn't have a table associated with it.
+	//
+	if winmgr.Help == nil {
+		winmgr.Help = stwin.NewDrawWin(stwin.DrawHelp, 0, 0, 0, 0)
+		winmgr.Help.IsHelp = true
+		// Help window should not have a table associated with it.
+		log.Assert(winmgr.Help.Table == nil)
+	}
+
+	// Populate() will call the DrawHelp() function to fill the help window.
+	winmgr.Help.Populate(true)
+	winmgr.Help.Window.Refresh()
+}
+
+func closeHelp() {
+	winmgr.Help = nil
+	stlib.ClearScreen()
+}
+
 // Refresh and redraw all the windows managed by the window manager.
 // This function iterates over all the windows starting from the lowest in
 // the stack and moving upwards, calls their Populate() method to fill them
 // with data, and then paints them using panels for proper stacking and
 // visibility.
 func refresh() {
+	if winmgr.Help != nil {
+		showHelp()
+		return
+	}
+
 	panels := make([]*gc.Panel, len(winmgr.Windows))
 
 	for i := len(winmgr.Windows) - 1; i >= 0; i-- {
@@ -408,10 +447,17 @@ func Run() {
 
 func HandleInput(ch gc.Key) {
 	switch ch {
+	case 'h':
+		showHelp()
 	case 'q':
 		win := infocusWindow()
 		if win != nil {
-			win.HandleQuit()
+			// Quit on a help window? Close the help window.
+			if win.IsHelpWindow() {
+				closeHelp()
+			} else {
+				win.HandleQuit()
+			}
 		} else {
 			stlib.EndTerminal()
 		}

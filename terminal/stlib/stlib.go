@@ -36,10 +36,15 @@ var (
 // Color pairs used in the terminal.
 const (
 	// 0 is reserved for the default color pair.
-	Invalid int16 = iota
+	Invalid      int16 = iota
+	BlackOnBlack       // Only useful for setting background to black.
+	WhiteOnWhite       // Only useful for setting background to white.
+	BlackOnWhite
+	WhiteOnBlack
 	RedOnBlack
 	GreenOnBlack
 	CyanOnBlack
+	YellowOnBlack
 	BlackOnCyan
 )
 
@@ -110,11 +115,25 @@ func InitTerminal() {
 
 	PrintStatus("ncurses initialized successfully")
 
-	ClearScreen()
-
 	if !gc.HasColors() {
 		log.Fatalf("Requires a terminal that supports colors")
 	}
+
+	// Must be called after Init but before using any colour related functions
+	if err := gc.StartColor(); err != nil {
+		log.Fatalf("Failed to start color support: %v", err)
+	}
+
+	// Setup various color pairs we are going to use.
+	gc.InitPair(BlackOnBlack, gc.C_BLACK, gc.C_BLACK)
+	gc.InitPair(WhiteOnWhite, gc.C_WHITE, gc.C_WHITE)
+	gc.InitPair(WhiteOnBlack, gc.C_WHITE, gc.C_BLACK)
+	gc.InitPair(BlackOnWhite, gc.C_BLACK, gc.C_WHITE)
+	gc.InitPair(RedOnBlack, gc.C_RED, gc.C_BLACK)
+	gc.InitPair(GreenOnBlack, gc.C_GREEN, gc.C_BLACK)
+	gc.InitPair(CyanOnBlack, gc.C_CYAN, gc.C_BLACK)
+	gc.InitPair(YellowOnBlack, gc.C_YELLOW, gc.C_BLACK)
+	gc.InitPair(BlackOnCyan, gc.C_BLACK, gc.C_CYAN)
 
 	gc.Echo(false)  // Don't echo while we do getch().
 	gc.CBreak(true) // Line buffering disabled.
@@ -125,17 +144,6 @@ func InitTerminal() {
 	// Note that we perform GetChar() on StatusWindow and not Stdscr.
 	//
 	StatusWindow.Keypad(true)
-
-	//
-	// This terminal sequence enables mouse drag event reporting.
-	// https://gist.github.com/sylt/93d3f7b77e7f3a881603
-	//
-	fmt.Printf("\033[?1003h\n")
-
-	// Must be called after Init but before using any colour related functions
-	if err := gc.StartColor(); err != nil {
-		log.Fatalf("Failed to start color support: %v", err)
-	}
 
 	if gc.MouseOk() {
 		log.Fatalf("Mouse support is not available in this terminal")
@@ -156,14 +164,15 @@ func InitTerminal() {
 	//
 	gc.MouseInterval(0)
 
-	// Setup various color pairs we are going to use.
-	gc.InitPair(RedOnBlack, gc.C_RED, gc.C_BLACK)
-	gc.InitPair(GreenOnBlack, gc.C_GREEN, gc.C_BLACK)
-	gc.InitPair(CyanOnBlack, gc.C_CYAN, gc.C_BLACK)
-	gc.InitPair(BlackOnCyan, gc.C_BLACK, gc.C_CYAN)
+	//
+	// This terminal sequence enables mouse drag event reporting.
+	// https://gist.github.com/sylt/93d3f7b77e7f3a881603
+	//
+	fmt.Printf("\033[?1003h\n")
+
+	ClearScreen()
 
 	//testUnicode()
-
 	PrintStatus("Terminal initialized successfully")
 }
 
@@ -200,11 +209,18 @@ func PrintStatus(format string, params ...interface{}) {
 	log.Assert(StatusWindow != nil)
 	log.Assert(len(format) > 0)
 
+	StatusWindow.ColorOn(BlackOnCyan)
 	if len(params) == 0 {
-		StatusWindow.MovePrintf(0, 0, ">> "+format)
+		s := fmt.Sprintf(">> " + format)
+		// Pad with spaces to fill the entire line.
+		s = fmt.Sprintf("%-*s", GetMaxCols(), s)
+		StatusWindow.MovePrintf(0, 0, s)
 	} else {
-		StatusWindow.MovePrintf(0, 0, ">> "+format, params...)
+		s := fmt.Sprintf(">> "+format, params...)
+		s = fmt.Sprintf("%-*s", GetMaxCols(), s)
+		StatusWindow.MovePrintf(0, 0, s)
 	}
+	StatusWindow.ColorOff(BlackOnCyan)
 
 	StatusWindow.ClearToEOL()
 	StatusWindow.Refresh()
@@ -213,8 +229,7 @@ func PrintStatus(format string, params ...interface{}) {
 func ClearScreen() {
 	// Must be called only after ncurses has been initialized.
 	log.Assert(Stdscr != nil)
-
+	Stdscr.SetBackground(gc.Char(' ') | gc.ColorPair(BlackOnBlack))
 	Stdscr.Clear()
-	PrintStatus("Screen cleared")
 	Stdscr.Refresh()
 }
