@@ -130,6 +130,17 @@ func (sw *STWin) IsHelpWindow() bool {
 	return sw.IsHelp
 }
 
+func (sw *STWin) GetName() string {
+	if sw.IsHelpWindow() {
+		return "Help Window"
+	} else if sw.Table != nil {
+		return sw.Table.Name
+	} else {
+		// TODO: Need a specific name for the draw window.
+		return "Draw Window"
+	}
+}
+
 // Does the given (y, x) coordinate fall within this window?
 func (sw *STWin) FallsInWindow(y, x int) bool {
 	log.Assert(y >= 0 && x >= 0, y, x)
@@ -265,7 +276,8 @@ func (sw *STWin) Populate(inFocus bool) {
 // Called when 'key' is pressed while this window is in focus.
 func (sw *STWin) HandleKey(key gc.Key) {
 	// For now, we just log the key pressed.
-	stlib.PrintStatus("Key %v pressed in window %s", gc.KeyString(key), sw.Table.Name)
+	stlib.PrintStatus("Key %v pressed in window '%s'",
+		gc.KeyString(key), sw.GetName())
 }
 
 // Called when user presses the quit character (usually 'q') when this window
