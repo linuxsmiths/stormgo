@@ -178,9 +178,7 @@ func InitTerminal() {
 
 // EndTerminal cleans up the terminal and exits the program.
 func EndTerminal() {
-	gc.End()
-	// Disable mouse drag event reporting.
-	fmt.Printf("\033[?1003l\n")
+	log.EndCurses()
 	os.Exit(0)
 }
 

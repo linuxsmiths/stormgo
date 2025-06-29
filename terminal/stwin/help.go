@@ -6,33 +6,38 @@ import (
 	"github.com/stormgo/terminal/stlib"
 )
 
+// Add help content to the pad.
+// Note that the pad can have more content than what the terminal can display
+// at once, so the user can scroll through it. See DrawPad().
 func DrawHelp(sw *STWin) {
 	// Must be called only for the help window.
 	log.Assert(sw.IsHelpWindow())
-	// Caller must have allocated the goncurses window.
-	log.Assert(sw.Window != nil)
 
-	win := sw.Window
+	// Caller must have allocated the goncurses pad.
+	pad := sw.Pad
+	log.Assert(pad != nil)
 
-	// Draw a box around the help window.
-	err := win.Box(0, 0)
-	log.Assert(err == nil, err)
+	// Pad width and height, will be set according to the content.
+	padW := 0
+	padH := 0
 
 	// Print the copyright and version information.
-	y := 1
-	x := 1
+	y := 0
+	x := 0
 	cs := common.GetCopyright()
 
-	win.ColorOn(stlib.YellowOnBlack)
+	pad.ColorOn(stlib.YellowOnBlack)
 	for _, line := range cs {
-		win.MovePrint(y, x, line)
+		pad.MovePrint(y, x, line)
 		y++
+		padW = max(padW, x+len(line))
 	}
-	win.ColorOff(stlib.YellowOnBlack)
+	pad.ColorOff(stlib.YellowOnBlack)
 
 	// Print help on mouse usage.
 	y++
-	win.MovePrint(y, x, "Mouse:")
+	pad.MovePrint(y, x, "Mouse:")
+	y++
 
 	mouseHelpKey := []string{
 		"left click on a window",
@@ -49,19 +54,22 @@ func DrawHelp(sw *STWin) {
 	xsplit := 35
 
 	for i, key := range mouseHelpKey {
-		y++
 		x = 1
-		win.ColorOn(stlib.CyanOnBlack)
-		win.MovePrint(y, x, common.TruncateAndPadUTF8String(key+": ", xsplit))
-		win.ColorOff(stlib.CyanOnBlack)
+		pad.ColorOn(stlib.CyanOnBlack)
+		pad.MovePrint(y, x, common.TruncateAndPadUTF8String(key+": ", xsplit))
+		pad.ColorOff(stlib.CyanOnBlack)
 		x += xsplit
-		win.MovePrint(y, x, mouseHelpAction[i])
+		pad.MovePrint(y, x, mouseHelpAction[i])
+		y++
+
+		padW = max(padW, x+len(mouseHelpAction[i]))
 	}
 
 	// Print help on key usage.
-	y += 2
+	y++
 	x = 1
-	win.MovePrint(y, x, "Keyboard:")
+	pad.MovePrint(y, x, "Keyboard:")
+	y++
 
 	kbHelpKey := []string{
 		"Tab",
@@ -77,12 +85,21 @@ func DrawHelp(sw *STWin) {
 
 	xsplit = 10
 	for i, key := range kbHelpKey {
-		y++
 		x = 1
-		win.ColorOn(stlib.CyanOnBlack)
-		win.MovePrint(y, x, common.TruncateAndPadUTF8String(key+": ", xsplit))
-		win.ColorOff(stlib.CyanOnBlack)
+		pad.ColorOn(stlib.CyanOnBlack)
+		pad.MovePrint(y, x, common.TruncateAndPadUTF8String(key+": ", xsplit))
+		pad.ColorOff(stlib.CyanOnBlack)
 		x += xsplit
-		win.MovePrint(y, x, kbHelpAction[i])
+		pad.MovePrint(y, x, kbHelpAction[i])
+		y++
+
+		padW = max(padW, x+len(kbHelpAction[i]))
 	}
+
+	padH = y
+
+	sw.PH = padH
+	sw.PW = padW
+
+	sw.Pad.Resize(padH, padW)
 }

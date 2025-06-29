@@ -19,6 +19,14 @@ func IsDebug() bool {
 	return (os.Getenv("ST_DEBUG") == "1")
 }
 
+// Undo ncurses initialization and restore terminal state before terminating
+// logs like Assert() and Fatalf().
+// This repeats what stlib.EndTerminal() does.
+func EndCurses() {
+	gc.End()
+	fmt.Printf("\033[?1003l\n")
+}
+
 func init() {
 	// Create a new logger instance.
 	stlog = logrus.New()
@@ -67,6 +75,8 @@ func Panicf(format string, args ...interface{}) {
 // Fatalf logs a message and causes the process to exit with a stack trace and
 // an exit code of 1. This is typically used for unrecoverable errors.
 func Fatalf(format string, args ...interface{}) {
+	// Restore terminal to show fatal log.
+	EndCurses()
 	stlog.Fatalf(format, args...)
 }
 
@@ -92,8 +102,7 @@ func Assert(cond bool, msg ...interface{}) {
 	//
 	// TODO: Even with this the assert backtrace does not show up.
 	//
-	gc.End()
-	fmt.Printf("\033[?1003l\n")
+	EndCurses()
 
 	if len(msg) != 0 {
 		Panicf("Assertion failed: %v", msg)

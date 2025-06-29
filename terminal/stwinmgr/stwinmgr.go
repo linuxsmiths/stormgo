@@ -98,16 +98,26 @@ func showHelp() {
 	//
 	// Create the help window if it doesn't exist.
 	// Help window is a "draw window" i.e., it has its own draw function and
-	// doesn't have a table associated with it.
+	// doesn't have a table associated with it. Additionally it's a Pad i.e.,
+	// it can be larger than the terminal window and can be scrolled.
 	//
 	if winmgr.Help == nil {
-		winmgr.Help = stwin.NewDrawWin(stwin.DrawHelp, 0, 0, 0, 0)
+		winmgr.Help = stwin.NewPad(stwin.DrawHelp, 0, 0, 0, 0, 0, 0)
 		winmgr.Help.IsHelp = true
 		// Help window should not have a table associated with it.
 		log.Assert(winmgr.Help.Table == nil)
+
+		//
+		// Clear the screen only the first time when help window is shown, not
+		// on every refresh, to avoid flicker.
+		//
+		stlib.ClearScreen()
 	}
 
-	// Populate() will call the DrawHelp() function to fill the help window.
+	//
+	// Populate() will call the DrawHelp() function to fill the Pad and call
+	// DrawPad() to draw the visible part of the Pad on the terminal.
+	//
 	winmgr.Help.Populate(true)
 	winmgr.Help.Window.Refresh()
 }
@@ -138,11 +148,20 @@ func refresh() {
 		// Populate the window with data from the STTable.
 		win.Populate(i == 0 /* inFocus */)
 
+		//
+		// win can be a window or a pad.
+		// We care about the underlying goncurses window, which we will need
+		// to pass to gc.NewPanel() to create a panel for this window.
+		// Whatever content is there on underlying ncurses window, it will be
+		// painted by the panel update.
+		//
+		ncwin := win.Window
+
 		// Populate() must set win.Window to a valid goncurses window.
-		log.Assert(win.Window != nil)
+		log.Assert(ncwin != nil)
 
 		// Create a new panel and place it at the top of the stack.
-		panels[i] = gc.NewPanel(win.Window)
+		panels[i] = gc.NewPanel(ncwin)
 	}
 
 	gc.UpdatePanels()
