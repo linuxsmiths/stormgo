@@ -176,9 +176,14 @@ func InitTerminal() {
 	PrintStatus("Terminal initialized successfully")
 }
 
-// EndTerminal cleans up the terminal and exits the program.
+// EndTerminal cleans up the terminal.
 func EndTerminal() {
 	log.EndCurses()
+}
+
+// QuitProgram cleans up the terminal and exits the program.
+func QuitProgram() {
+	EndTerminal()
 	os.Exit(0)
 }
 

@@ -49,6 +49,10 @@ type STWin struct {
 	W      int // Width of the window, including the borders.
 	X      int
 	Y      int
+	savedH int
+	savedW int
+	savedX int
+	savedY int
 
 	//
 	// Pad is used to store content larger than what can fit in the terminal.
@@ -234,6 +238,32 @@ func (sw *STWin) GetName() string {
 	}
 }
 
+func (sw *STWin) ToggleFullScreen() {
+	if sw.savedH != 0 {
+		log.Assert(sw.savedW != 0)
+		sw.X = sw.savedX
+		sw.Y = sw.savedY
+		sw.W = sw.savedW
+		sw.H = sw.savedH
+		sw.savedH = 0
+		sw.savedW = 0
+		sw.savedX = 0
+		sw.savedY = 0
+		stlib.PrintStatus("Minimized window %s", sw.GetName())
+	} else {
+		log.Assert(sw.savedW == 0, sw.savedW)
+		sw.savedH = sw.H
+		sw.savedW = sw.W
+		sw.savedX = sw.X
+		sw.savedY = sw.Y
+		sw.X = 0
+		sw.Y = 0
+		sw.W = stlib.GetMaxCols()
+		sw.H = stlib.GetMaxRows()
+		stlib.PrintStatus("Maximized window %s", sw.GetName())
+	}
+}
+
 // Does the given (y, x) coordinate fall within this window?
 func (sw *STWin) FallsInWindow(y, x int) bool {
 	log.Assert(y >= 0 && x >= 0, y, x)
@@ -348,6 +378,14 @@ func (sw *STWin) Populate(inFocus bool) {
 	x := 1
 	win.ColorOn(stlib.BlackOnCyan)
 	for _, cell := range sw.Table.Header.Cells {
+		//
+		// If this column cannot fit in the remaining width of the window,
+		// skip it and all others.
+		//
+		if x+cell.Width+1 > sw.W {
+			break
+		}
+
 		paddedStr := common.TruncateAndPadUTF8String(cell.Content, cell.Width)
 		win.MovePrint(y, x, paddedStr)
 
@@ -366,10 +404,19 @@ func (sw *STWin) Populate(inFocus bool) {
 	//
 	y = 2
 	for _, row := range sw.Table.Rows {
+		if y >= sw.H-1 {
+			// No more rows can fit in the window.
+			break
+		}
+
 		x = 1
 		for _, cell := range row.Cells {
 			// Data rows must not have sort order set.
 			log.Assert(cell.Sort == sttable.SortOrderNone, cell.Sort)
+
+			if x+cell.Width+1 > sw.W {
+				break
+			}
 
 			paddedStr := common.TruncateAndPadUTF8String(cell.Content, cell.Width)
 			win.MovePrint(y, x, paddedStr)
@@ -399,7 +446,7 @@ func (sw *STWin) HandleKey(key gc.Key) {
 func (sw *STWin) HandleQuit() {
 	// For now, we always quit the application.
 	stlib.PrintStatus("Quit pressed in window %s", sw.Table.Name)
-	stlib.EndTerminal()
+	stlib.QuitProgram()
 }
 
 // Called when mouse left key is pressed while this window is in focus.

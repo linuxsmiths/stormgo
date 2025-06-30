@@ -465,11 +465,16 @@ func Run() {
 }
 
 func HandleInput(ch gc.Key) {
+	win := infocusWindow()
+
 	switch ch {
+	case 'f':
+		if win != nil {
+			win.ToggleFullScreen()
+		}
 	case 'h':
 		showHelp()
 	case 'q':
-		win := infocusWindow()
 		if win != nil {
 			// Quit on a help window? Close the help window.
 			if win.IsHelpWindow() {
@@ -478,7 +483,7 @@ func HandleInput(ch gc.Key) {
 				win.HandleQuit()
 			}
 		} else {
-			stlib.EndTerminal()
+			stlib.QuitProgram()
 		}
 	case gc.KEY_TAB:
 		RefocusOnTabPress()
@@ -486,7 +491,6 @@ func HandleInput(ch gc.Key) {
 		// HandleMouse() must be called for mouse click events.
 		log.Assert(false)
 	default:
-		win := infocusWindow()
 		if win != nil {
 			win.HandleKey(ch)
 		}

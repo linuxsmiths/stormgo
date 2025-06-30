@@ -21,7 +21,6 @@ func IsDebug() bool {
 
 // Undo ncurses initialization and restore terminal state before terminating
 // logs like Assert() and Fatalf().
-// This repeats what stlib.EndTerminal() does.
 func EndCurses() {
 	gc.End()
 	fmt.Printf("\033[?1003l\n")
@@ -96,12 +95,7 @@ func Assert(cond bool, msg ...interface{}) {
 		return
 	}
 
-	//
-	// This repeats what stlib.EndTerminal() does as we want the assert log to
-	// show up in the terminal.
-	//
-	// TODO: Even with this the assert backtrace does not show up.
-	//
+	// Reset the terminal so as the assert backtrace shows up properly.
 	EndCurses()
 
 	if len(msg) != 0 {

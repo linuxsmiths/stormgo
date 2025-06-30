@@ -73,12 +73,14 @@ func DrawHelp(sw *STWin) {
 
 	kbHelpKey := []string{
 		"Tab",
+		"f",
 		"h",
 		"q",
 	}
 
 	kbHelpAction := []string{
 		"focus on next window",
+		"toggle fullscreen for the infocus window",
 		"this help",
 		"quit",
 	}

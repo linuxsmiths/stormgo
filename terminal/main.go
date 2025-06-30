@@ -42,6 +42,24 @@ func main() {
 	table2.AddRow([]string{"col1row5", "col2row5"})
 	table1.AddRow([]string{"longer than width", "again longer than width"})
 
+	table3 := sttable.NewTable("table3")
+	table3.AddHeader([]sttable.STCell{
+		{Content: "COLUMN1", Width: 15},
+		{Content: "COLUMN2", Width: 20},
+		{Content: "COLUMN3", Width: 20},
+		{Content: "LONG COLUMN NAME4", Width: 25},
+	})
+	table3.AddRow([]string{"c1r1", "c2r1", "c3r1", "c4r1"})
+	table3.AddRow([]string{"c1r2", "c2r2", "c3r2", "c4r2"})
+	table3.AddRow([]string{"c1r3", "c2r3", "c3r3", "c4r3"})
+	table3.AddRow([]string{"c1r4", "c2r4", "c3r4", "c4r4"})
+	table3.AddRow([]string{"c1r5", "c2r5", "c3r5", "c4r5"})
+	table3.AddRow([]string{"c1r6", "c2r6", "c3r6", "c4r6"})
+	table3.AddRow([]string{"c1r7", "c2r7", "c3r7", "c4r7"})
+	table3.AddRow([]string{"c1r8", "c2r8", "c3r8", "c4r8"})
+	table3.AddRow([]string{"c1r9", "c2r9", "c3r9", "c4r9"})
+	table3.AddRow([]string{"c1r10", "c2r10", "c3r10", "c4r10"})
+
 	// 1 for the heading and 1 each for the boundary lines on both sides.
 	win1 := stwin.NewWin(table1, 1, 0)
 	stwinmgr.AddWindow(win1)
@@ -54,6 +72,17 @@ func main() {
 
 	win4 := stwin.NewWin(table1, 1, 30)
 	stwinmgr.AddWindow(win4)
+
+	win5 := stwin.NewWin(table3, 10, 10)
+	//
+	// Reduce width and height of the window so as not to fit the table
+	// completely. This is to demonstrate that the table will be truncated
+	// according to the window size and if we resize the window, the table
+	// will then fit.
+	//
+	win5.W = 30
+	win5.H = 4
+	stwinmgr.AddWindow(win5)
 
 	//
 	// Run the window manager to handle events and periodically refresh the
