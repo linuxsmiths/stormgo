@@ -8,6 +8,37 @@ import (
 	"github.com/stormgo/terminal/sttable"
 )
 
+type MousePressLocation int
+
+const (
+	MousePressNone MousePressLocation = iota // Mouse not pressed.
+
+	MousePressWindow      // Mouse pressed somewhere in the window (no corners).
+	MousePressTopLeft     // Mouse pressed in the top-left corner of a window.
+	MousePressTopRight    // Mouse pressed in the top-right corner of a window.
+	MousePressBottomLeft  // Mouse pressed in the bottom-left corner of a window.
+	MousePressBottomRight // Mouse pressed in the bottom-right corner of a window.
+)
+
+func (mousePress MousePressLocation) String() string {
+	switch mousePress {
+	case MousePressNone:
+		return "MousePressNone"
+	case MousePressWindow:
+		return "MousePressWindow"
+	case MousePressTopLeft:
+		return "MousePressTopLeft"
+	case MousePressTopRight:
+		return "MousePressTopRight"
+	case MousePressBottomLeft:
+		return "MousePressBottomLeft"
+	case MousePressBottomRight:
+		return "MousePressBottomRight"
+	default:
+		return "UnknownMousePressLocation"
+	}
+}
+
 type DrawFunc func(*STWin)
 
 // This is the ST window.
@@ -262,6 +293,27 @@ func (sw *STWin) ToggleFullScreen() {
 		sw.H = stlib.GetMaxRows()
 		stlib.PrintStatus("Maximized window %s", sw.GetName())
 	}
+}
+
+// Given (y, x) coordinates of mouse press, determine which part of the window
+// the mouse was pressed.
+func (sw *STWin) GetMousePressLocation(y, x int) MousePressLocation {
+	if !sw.FallsInWindow(y, x) {
+		return MousePressNone
+	}
+
+	if y <= sw.Y+1 && x <= sw.X+1 {
+		return MousePressTopLeft
+	} else if y <= sw.Y+1 && x >= sw.X+sw.W-2 {
+		return MousePressTopRight
+	} else if y >= sw.Y+sw.H-2 && x <= sw.X+1 {
+		return MousePressBottomLeft
+	} else if y >= sw.Y+sw.H-2 && x >= sw.X+sw.W-2 {
+		return MousePressBottomRight
+	}
+
+	// Pressed on the window but not in any corner.
+	return MousePressWindow
 }
 
 // Does the given (y, x) coordinate fall within this window?
