@@ -1,9 +1,13 @@
 package sttable
 
 import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"sort"
+
 	"github.com/stormgo/common/log"
 	"github.com/stormgo/terminal/stlib"
-	"sort"
 )
 
 type SortOrder int
@@ -43,6 +47,46 @@ type STRow struct {
 	Cells []STCell
 }
 
+// STCol defines a column that can be added to a STTable.
+type STCol struct {
+	//
+	// Id is the unique identifier for the column that identifies this column
+	// from various available columns. Every column that can be added to any
+	// table must have a globally unique Id. This is used to fetch the column
+	// metadata including deciding how the column data is populated. This is
+	// not displayed in the table.
+	//
+	Id string
+
+	//
+	// Description of the column, not displayed in the table.
+	//
+	Desc string
+
+	//
+	// Is this column a key column?
+	// A key column has unique values for each row in the table.
+	// There can be only one key column in a table.
+	//
+	IsKey bool
+
+	//
+	// Every column must have a header that's displayed at the top row.
+	//
+	Header string
+
+	//
+	// How does this column get its data?
+	//
+	Source string
+
+	//
+	// How many characters must be used to display this column?
+	// Both header and row width is controlled by this.
+	//
+	Width int
+}
+
 // This represents a table of data that's displayed in a STWin.
 // This is the Model part of the MVC pattern, the View is the STWin that
 // displays the table.
@@ -74,6 +118,13 @@ type STTable struct {
 	// STWin.
 	//
 	Rows []STRow
+
+	//
+	// All the columns of the table.
+	// Each column produces one header which gets added to Header and one or more
+	// rows which get added to Rows.
+	//
+	Cols []*STCol
 }
 
 func NewTable(name string) *STTable {
@@ -161,5 +212,59 @@ func (st *STTable) Sort(colIdx int, order SortOrder) {
 		sort.Slice(st.Rows, func(i, j int) bool {
 			return st.Rows[i].Cells[colIdx].Content > st.Rows[j].Cells[colIdx].Content
 		})
+	}
+}
+
+// JSON column definition.
+type ColDef struct {
+	Desc   string `json:"desc"`
+	Id     string `json:"id"`
+	Name   string `json:"name"`
+	Source string `json:"source"`
+	IsKey  bool   `json:"iskey"`
+}
+
+// This function parses a column definition and returns a correctly populated
+// STCol object.
+func ParseColDef(colDefJsonFile string) (*STCol, error) {
+	file, err := os.Open(colDefJsonFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file %s: %v", colDefJsonFile, err)
+	}
+	defer file.Close()
+
+	// Variable to hold the decoded data.
+	var colDef ColDef
+
+	// Decode JSON from file into the struct
+	decoder := json.NewDecoder(file)
+	err = decoder.Decode(&colDef)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode JSON from %s: %v", colDefJsonFile, err)
+	}
+
+	col := &STCol{
+		Id:     colDef.Id,
+		Desc:   colDef.Desc,
+		IsKey:  colDef.IsKey,
+		Header: colDef.Name,
+		Source: colDef.Source,
+		Width:  10,
+	}
+
+	return col, nil
+}
+
+func (st *STTable) AddCol(col *STCol) {
+	st.Cols = append(st.Cols, col)
+}
+
+// Generate rows for this table based on the column definitions added to the
+// table.
+func (st *STTable) GenRows() {
+	// Columns must be added to generate rows.
+	log.Assert(len(st.Cols) > 0)
+
+	for col := range st.Cols {
 	}
 }

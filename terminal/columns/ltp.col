@@ -1,0 +1,7 @@
+{
+        desc: "Last traded price",
+        id: "ltp",
+        name: "LTP",
+        source: "ltp",
+        iskey: "false",
+}

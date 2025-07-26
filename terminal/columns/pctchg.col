@@ -1,0 +1,7 @@
+{
+        desc: "Percentage change",
+        id: "pctchg",
+        name: "PCTCHG",
+        source: "pctchg",
+        iskey: "false",
+}
