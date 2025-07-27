@@ -3,7 +3,13 @@ package common
 import (
 	"fmt"
 	"github.com/stormgo/common/log"
+	"os"
+	"path/filepath"
 	"unicode/utf8"
+)
+
+var (
+	StormgoDir string // Directory where Stormgo is installed.
 )
 
 func GetCopyright() []string {
@@ -43,4 +49,38 @@ func TruncateAndPadUTF8String(s string, maxRunes int) string {
 	}
 
 	return paddedString[:x]
+}
+
+func GetStormgoDir() string {
+	// Must be set.
+	log.Assert(StormgoDir != "")
+
+	return StormgoDir
+}
+
+func init() {
+	ex, err := os.Executable()
+	if err != nil {
+		log.Fatalf("Error getting executable path: %v", err)
+	}
+
+	buildDir := filepath.Dir(ex)
+	log.Infof("Running from dir %s", buildDir)
+
+	// Executable path is stormgo/build/terminal.
+	StormgoDir = filepath.Join(buildDir, "..")
+
+	// Convert into a canonical path.
+	StormgoDir, err := filepath.EvalSymlinks(StormgoDir)
+	if err != nil {
+		log.Fatalf("Error resolving symlinks from %s: %v", err)
+	}
+
+	StormgoDir, err = filepath.Abs(StormgoDir)
+	if err != nil {
+		log.Fatalf("Error getting absolute path from %s: %v", err)
+	}
+
+	StormgoDir = filepath.Clean(StormgoDir)
+	log.Infof("StormgoDir is %s", StormgoDir)
 }

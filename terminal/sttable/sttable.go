@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 
+	"github.com/stormgo/common"
 	"github.com/stormgo/common/log"
 	"github.com/stormgo/terminal/stlib"
 )
@@ -16,6 +18,11 @@ const (
 	SortOrderNone SortOrder = iota // No sorting applied.
 	SortOrderAsc                   // Ascending order.
 	SortOrderDesc                  // Descending order.
+)
+
+var (
+	// Directory holding column definitions.
+	ColumnDefinitionsDir string
 )
 
 // A cell is the smallest unit of data in a table.
@@ -255,8 +262,15 @@ func ParseColDef(colDefJsonFile string) (*STCol, error) {
 	return col, nil
 }
 
-func (st *STTable) AddCol(col *STCol) {
+func (st *STTable) AddCol(colDefName string) error {
+	col, err := ParseColDef(filepath.Join(ColumnDefinitionsDir, colDefName+".json"))
+	if err != nil {
+		return fmt.Errorf("failed to parse column definition %s: %v", colDefName, err)
+	}
 	st.Cols = append(st.Cols, col)
+	log.Debugf("Added column %s to table %s, total columns: %d",
+		col.Header, st.Name, len(st.Cols))
+	return nil
 }
 
 // Generate rows for this table based on the column definitions added to the
@@ -265,6 +279,11 @@ func (st *STTable) GenRows() {
 	// Columns must be added to generate rows.
 	log.Assert(len(st.Cols) > 0)
 
-	for col := range st.Cols {
-	}
+	//for col := range st.Cols {
+	//}
+}
+
+func init() {
+	stormgoDir := common.GetStormgoDir()
+	ColumnDefinitionsDir = filepath.Join(stormgoDir, "terminal", "columns")
 }
