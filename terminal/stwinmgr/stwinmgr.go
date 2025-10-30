@@ -117,10 +117,10 @@ func showHelp() {
 	}
 
 	//
-	// Populate() will call the DrawHelp() function to fill the Pad and call
+	// Paint() will call the DrawHelp() function to fill the Pad and call
 	// DrawPad() to draw the visible part of the Pad on the terminal.
 	//
-	winmgr.Help.Populate(true)
+	winmgr.Help.Paint(true)
 	winmgr.Help.Window.Refresh()
 }
 
@@ -129,12 +129,34 @@ func closeHelp() {
 	stlib.ClearScreen()
 }
 
+// Populate table data for all windows in the window manager, or only the
+// top/infocus one if onlyInFocus is true.
+func populate(onlyInFocus bool) {
+	for i := 0; i < len(winmgr.Windows); i++ {
+		win := winmgr.Windows[i]
+		//
+		// Static tables' data doesn't change, for dynamic tables call the
+		// GenRows() method to regenerate fresh rows.
+		//
+		if win.Table.IsDynamic {
+			stlib.PrintStatus("Populating dynamic window[H=%d, W=%d, Y=%d, X=%d] %d/%d <%s>",
+				win.H, win.W, win.Y, win.X, i+1, len(winmgr.Windows), win.Table.Name)
+			win.Table.GenRows()
+		}
+
+		if onlyInFocus {
+			break
+		}
+	}
+}
+
 // Refresh and redraw all the windows managed by the window manager.
-// This function iterates over all the windows starting from the lowest in
-// the stack and moving upwards, calls their Populate() method to fill them
-// with data, and then paints them using panels for proper stacking and
-// visibility.
-func refresh() {
+// Table data for each window must have already been populated by calling
+// populate(). This function will iterate over all the windows starting from
+// the lowest in the stack and moving upwards, calls their Paint() method to
+// fill the goncurses window with data from the window's table, and then draw
+// them using panels for proper stacking and visibility.
+func draw() {
 	if winmgr.Help != nil {
 		showHelp()
 		return
@@ -144,11 +166,15 @@ func refresh() {
 
 	for i := len(winmgr.Windows) - 1; i >= 0; i-- {
 		win := winmgr.Windows[i]
-		//stlib.PrintStatus("Populating window[H=%d, W=%d, Y=%d, X=%d] %d/%d <%s>",
-		//	win.H, win.W, win.Y, win.X, i+1, len(winmgr.Windows), win.Table.Name)
 
-		// Populate the window with data from the STTable.
-		win.Populate(i == 0 /* inFocus */)
+		//
+		// If sorting is selected by the user, sort the table rows before painting
+		// the table data in the goncurses window.
+		//
+		win.Table.Sort()
+
+		// Paint the goncurses window with data from the STTable.
+		win.Paint(i == 0 /* inFocus */)
 
 		//
 		// win can be a window or a pad.
@@ -166,6 +192,9 @@ func refresh() {
 		panels[i] = gc.NewPanel(ncwin)
 	}
 
+	//
+	// These ones actually draw the windows on the terminal.
+	//
 	gc.UpdatePanels()
 	gc.Update()
 
@@ -203,7 +232,9 @@ func RefocusOnTabPress() {
 	topWindow := winmgr.Windows[0]
 	winmgr.Windows = append(winmgr.Windows[1:], topWindow)
 
-	refresh()
+	// Get latest data for only the in-focus window.
+	populate(true /* onlyInFocus */)
+	draw()
 }
 
 // Call this to refocus a window when the user clicks on it with the mouse.
@@ -237,7 +268,9 @@ func RefocusOnMouseClick(y, x int) {
 
 	winmgr.Windows[0] = clickedWindow
 
-	refresh()
+	// Get latest data for only the in-focus window.
+	populate(true /* onlyInFocus */)
+	draw()
 }
 
 // Given the mouse coordinates (y, x) return the index of the window that was
@@ -481,12 +514,13 @@ func HandleMouseLeftButtonDrag(y, x int) {
 
 // This function runs indefinitely, processing user input and refreshing the
 // windows periodically.
-// This MUST be called by one one thread, and that thread is solely
+// This MUST be called by only one thread, and that thread is solely
 // responsible for managing the terminal, handling user input and refreshing
 // the windows.
 func Run() {
-	// Refresh once at start.
-	refresh()
+	// Refresh once at start to draw the initial windows.
+	populate(false /* onlyInFocus */)
+	draw()
 
 	//
 	// GetChar() should come out every refreshIntervalSec, so that we can
@@ -497,6 +531,17 @@ func Run() {
 	for {
 		ch := stlib.StatusWindow.GetChar()
 
+		//
+		// [Step 1] Populate dynamic table data.
+		//
+		populate(false /* onlyInFocus */)
+
+		//
+		// [Step 2] Perform any key/mouse handling.
+		//          This may do two things:
+		//          1. Make changes to the table data, e.g., sorting the rows.
+		//          2. Change window location, size or highlighting.
+		//
 		if ch != 0 {
 			stlib.PrintStatus("Got key: %s", gc.KeyString(ch))
 			if ch == gc.KEY_MOUSE {
@@ -513,8 +558,10 @@ func Run() {
 			}
 		}
 
-		// Refresh all the windows periodically or after a key/mouse event.
-		refresh()
+		//
+		// [Step 3] Now draw all the updated windows on the screen.
+		//
+		draw()
 	}
 }
 

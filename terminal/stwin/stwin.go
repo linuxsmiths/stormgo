@@ -360,9 +360,12 @@ func (sw *STWin) FallsInColumnHeader(y, x int) int {
 	return -1
 }
 
-// Populate the window with the table contents.
-func (sw *STWin) Populate(inFocus bool) {
-	//stlib.PrintStatus("Populating window %s (Y=%d, X=%d, H=%d, W=%d)",
+// Paint the window with the table contents.
+// This copies the data from the table to the goncurses Window.
+// The data is not yet visible on the terminal until panels are updated.
+// See stwinmgr.draw().
+func (sw *STWin) Paint(inFocus bool) {
+	//stlib.PrintStatus("Painting window %s (Y=%d, X=%d, H=%d, W=%d)",
 	//	sw.Table.Name, sw.Y, sw.X, sw.H, sw.W)
 
 	//
@@ -386,7 +389,9 @@ func (sw *STWin) Populate(inFocus bool) {
 	// If Draw function is set, call it to draw the window content.
 	// In case of a Pad, the Draw function populates the Pad and not the
 	// Window. DrawPad() then copies the currently visible content from the
-	// Pad to goncurses Window.
+	// Pad to goncurses Window. Note that in this case we don't have a table
+	// to copy data from, but we let the Draw() method copy the data to the
+	// goncurses window however it wants. See DrawHelp() for an example.
 	//
 	if sw.Draw != nil {
 		// Table must not be set when Draw function is set.
@@ -513,22 +518,15 @@ func (sw *STWin) HandleMouse(y, x int) {
 		return
 	}
 
-	// else, sort the table by the clicked column.
-	cell := &sw.Table.Header.Cells[colIdx]
-
-	// Toggle the sort order for the clicked column.
-	if cell.Sort == sttable.SortOrderNone || cell.Sort == sttable.SortOrderDesc {
-		cell.Sort = sttable.SortOrderAsc
+	//
+	// Save the column index and the sort order in the table.
+	// Later sttable.Sort() can be called to sort the table based on this.
+	//
+	sw.Table.SortColIdx = colIdx
+	if sw.Table.SortOrder == sttable.SortOrderNone ||
+		sw.Table.SortOrder == sttable.SortOrderDesc {
+		sw.Table.SortOrder = sttable.SortOrderAsc
 	} else {
-		cell.Sort = sttable.SortOrderDesc
+		sw.Table.SortOrder = sttable.SortOrderDesc
 	}
-
-	// Only one column can be sorted at a time.
-	for i := range sw.Table.Header.Cells {
-		if i != colIdx {
-			sw.Table.Header.Cells[i].Sort = sttable.SortOrderNone
-		}
-	}
-
-	sw.Table.Sort(colIdx, cell.Sort)
 }

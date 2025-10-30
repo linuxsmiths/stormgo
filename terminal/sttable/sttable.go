@@ -23,6 +23,10 @@ const (
 var (
 	// Directory holding column definitions.
 	ColumnDefinitionsDir string
+
+	// Directory holding data files used for displaying tables.
+	// See data.layout for the structure of this directory.
+	DataDir string
 )
 
 // A cell is the smallest unit of data in a table.
@@ -132,13 +136,32 @@ type STTable struct {
 	// rows which get added to Rows.
 	//
 	Cols []*STCol
+
+	//
+	// If this table needs to be sorted, the column on which to sort and the
+	// sort order. If SortOrder is SortOrderNone, no sorting is applied.
+	// Updated and saved when a header cell is clicked.
+	//
+	SortColIdx int
+	SortOrder  SortOrder
+
+	//
+	// For dynamic tables, refresh() calls GenRows() to regenerate the rows
+	// every time.
+	// Non-dynamic tables also can have their data changed through other
+	// means and refresh() will just draw the latest table data.
+	//
+	IsDynamic bool
 }
 
-func NewTable(name string) *STTable {
+func NewTable(name string, dynamic bool) *STTable {
 	log.Assert(name != "", "empty table name not allowed")
 
 	return &STTable{
-		Name: name,
+		Name:       name,
+		IsDynamic:  dynamic,
+		SortColIdx: -1,
+		SortOrder:  SortOrderNone,
 	}
 }
 
@@ -207,9 +230,34 @@ func (st *STTable) GetColumnCount() int {
 	return len(st.Header.Cells)
 }
 
-// Sort the table based on the content of the column at colIdx.
-func (st *STTable) Sort(colIdx int, order SortOrder) {
+// Sort the table based on the content of the column at st.SortColIdx and as
+// per st.SortOrder.
+func (st *STTable) Sort() {
+	colIdx := st.SortColIdx
+	order := st.SortOrder
+
+	// No sorting requested by user.
+	if order == SortOrderNone {
+		return
+	}
+
 	log.Assert(order == SortOrderAsc || order == SortOrderDesc, order)
+	log.Assert(colIdx >= 0 && colIdx < len(st.Header.Cells),
+		colIdx, len(st.Header.Cells), st.Name)
+
+	stlib.PrintStatus("Sorting table: %s, by colIdx: %d with order: %d",
+		st.Name, colIdx, order)
+
+	// else, sort the table by the clicked column.
+	cell := &st.Header.Cells[colIdx]
+	cell.Sort = order
+
+	// Only one column can be sorted at a time.
+	for i := range st.Header.Cells {
+		if i != colIdx {
+			st.Header.Cells[i].Sort = SortOrderNone
+		}
+	}
 
 	if order == SortOrderAsc {
 		sort.Slice(st.Rows, func(i, j int) bool {
@@ -267,23 +315,107 @@ func (st *STTable) AddCol(colDefName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to parse column definition %s: %v", colDefName, err)
 	}
+
+	if st.Cols == nil {
+		if !col.IsKey {
+			return fmt.Errorf("first column added to table (%s) must be a key column",
+				st.Name)
+		}
+	} else {
+		if col.IsKey {
+			return fmt.Errorf("table (%s) already has a key column, cannot add %s",
+				st.Name, col.Header)
+		}
+	}
+
 	st.Cols = append(st.Cols, col)
+
 	log.Debugf("Added column %s to table %s, total columns: %d",
 		col.Header, st.Name, len(st.Cols))
+
 	return nil
 }
 
 // Generate rows for this table based on the column definitions added to the
 // table.
 func (st *STTable) GenRows() {
-	// Columns must be added to generate rows.
+	// GenRows() must be called only for dynamic tables.
+	log.Assert(st.IsDynamic, st.Name)
+
+	// Columns must be added before adding rows.
 	log.Assert(len(st.Cols) > 0)
 
-	//for col := range st.Cols {
-	//}
+	// Generate brand new rows everytime GenRows() is called.
+	st.Rows = nil
+	st.Width = 0
+
+	// Generate header if not already present.
+	if st.Header.Cells == nil {
+		// Generate and add the header row.
+		headerCells := make([]STCell, len(st.Cols))
+		for col := range st.Cols {
+			headerCells[col] = STCell{
+				Content: st.Cols[col].Header,
+				Width:   st.Cols[col].Width,
+			}
+		}
+		st.AddHeader(headerCells)
+	}
+
+	keyCol := st.Cols[0]
+	// First column must be the key column.
+	log.Assert(keyCol.IsKey, st.Cols)
+
+	// Key columns name is the top level data directory that contains subdirs
+	// for each row entity. The subdirs in turn contain a directory for each
+	// column where that directory has the data files for that column.
+	tldd := filepath.Join(DataDir, keyCol.Source)
+
+	entries, err := os.ReadDir(tldd)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	// Each sub-directory in entries corresponds to one row in the table.
+	for _, entry := range entries {
+		info, _ := entry.Info()
+		keyName := info.Name()
+		row := make([]string, len(st.Cols))
+
+		// Each sub-directory has a directory for each column, except the key
+		// column which is the sub-directory name itself.
+		for idx, col := range st.Cols {
+			if col.IsKey {
+				row[idx] = keyName
+				continue
+			}
+
+			val, err := GetLatestValue(filepath.Join(tldd, keyName, col.Source))
+			if err != nil {
+				log.Fatalf("failed to get latest value for key: %s, column: %s: %v",
+					keyName, col.Header, err)
+			}
+			row[idx] = val
+		}
+
+		st.AddRow(row)
+	}
+}
+
+// From the given column dir return the latest entry.
+func GetLatestValue(colDir string) (string, error) {
+	latest := filepath.Join(colDir, "latest")
+
+	data, err := os.ReadFile(latest)
+	if err != nil {
+		return "", fmt.Errorf("failed to read latest file %s: %v", latest, err)
+	}
+
+	return string(data), nil
 }
 
 func init() {
 	stormgoDir := common.GetStormgoDir()
 	ColumnDefinitionsDir = filepath.Join(stormgoDir, "terminal", "columns")
+	DataDir = filepath.Join(stormgoDir, "data")
 }

@@ -18,7 +18,7 @@ func main() {
 	// Initialize the window manager.
 	stwinmgr.Start()
 
-	table1 := sttable.NewTable("table1")
+	table1 := sttable.NewTable("table1", false /* dynamic */)
 	table1.AddHeader([]sttable.STCell{
 		{Content: "COLUMN1", Width: 10},
 		{Content: "COLUMN2", Width: 15},
@@ -30,7 +30,7 @@ func main() {
 	table1.AddRow([]string{"col1row5", "col2row5"})
 	table1.AddRow([]string{"longer than width", "again longer than width"})
 
-	table2 := sttable.NewTable("table2")
+	table2 := sttable.NewTable("table2", false /* dynamic */)
 	table2.AddHeader([]sttable.STCell{
 		{Content: "COLUMN1", Width: 10},
 		{Content: "COLUMN2", Width: 15},
@@ -42,7 +42,7 @@ func main() {
 	table2.AddRow([]string{"col1row5", "col2row5"})
 	table1.AddRow([]string{"longer than width", "again longer than width"})
 
-	table3 := sttable.NewTable("table3")
+	table3 := sttable.NewTable("table3", false /* dynamic */)
 	table3.AddHeader([]sttable.STCell{
 		{Content: "COLUMN1", Width: 15},
 		{Content: "COLUMN2", Width: 20},
@@ -85,8 +85,28 @@ func main() {
 	stwinmgr.AddWindow(win5)
 
 	//
-	// Run the window manager to handle events and periodically refresh the
-	// windows.
+	// Add a dynamically populated table and a window to hold it.
+	//
+	table4 := sttable.NewTable("table4", true /* dynamic */)
+	err := table4.AddCol("stock")
+	if err != nil {
+		log.Fatalf("Failed to add column 'stock' to table4: %v", err)
+	}
+
+	err = table4.AddCol("ltp")
+	if err != nil {
+		log.Panicf("Failed to add column 'ltp' to table4: %v", err)
+	}
+
+	table4.GenRows()
+	win6 := stwin.NewWin(table4, 2, 2)
+
+	// Add the window to the window manager.
+	stwinmgr.AddWindow(win6)
+
+	//
+	// Now run the window manager to display all the windows with their contents,
+	// also handle key and mouse events and periodically refresh the windows.
 	//
 	stwinmgr.Run()
 
