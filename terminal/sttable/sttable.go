@@ -330,8 +330,8 @@ func (st *STTable) AddCol(colDefName string) error {
 
 	st.Cols = append(st.Cols, col)
 
-	log.Debugf("Added column %s to table %s, total columns: %d",
-		col.Header, st.Name, len(st.Cols))
+	//log.Debugf("Added column %s to table %s, total columns: %d",
+	//	col.Header, st.Name, len(st.Cols))
 
 	return nil
 }
