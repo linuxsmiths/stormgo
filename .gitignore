@@ -52,7 +52,7 @@ Thumbs.db
 build/
 
 # stormgo data directory
-data/
+#data/
 
 # vim swp files
 *~
