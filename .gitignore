@@ -51,6 +51,9 @@ Thumbs.db
 # stormgo build directory
 build/
 
+# stormgo data directory
+data/
+
 # vim swp files
 *~
 *.swp

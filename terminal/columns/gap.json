@@ -1,7 +1,7 @@
 {
-        desc: "Gap from previous closing price",
-        id: "gap",
-        name: "GAP",
-        source: "gap",
-        iskey: "false",
+        "desc": "Gap from previous closing price",
+        "id": "gap",
+        "name": "GAP",
+        "source": "gap",
+        "iskey": false
 }

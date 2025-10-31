@@ -1,7 +1,7 @@
 {
-        desc: "Stock",
-        id: "stock",
-        name: "STOCK",
-        source: "stock",
-        iskey: "true",
+        "desc": "Stock",
+        "id": "stock",
+        "name": "STOCK",
+        "source": "stock",
+        "iskey": true
 }
