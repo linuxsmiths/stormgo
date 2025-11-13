@@ -1,0 +1,55 @@
+{
+    "Xtld": "/home/tomar/exploits/stockmarket/zerodha/bot/gitrepo/pytrader/src/data",
+    "tld": "/media/tomar/Extreme SSD/angelone-historical-data",
+
+    "REM": "Loading angelone_instruments.json has been seen to be flaky, sometimes the",
+    "REM": "download fails while sometimes the new file has some missing tokens.",
+    "REM": "Since NIFTY_50 data is not likely to change on a daily basis avoid loading",
+    "REM": "angelone_instruments.json and instead always use the ref file.",
+    "REM": "Once we start using symbols outside NIFTY_50 or if NIFTY_50 has a change",
+    "REM": "then we should reload the instruments data",
+    "skip_load_instruments_json": "True",
+
+    "REM": "AngelOne doesn't have data before 3rd Oct 2016",
+    "startyear": "2016",
+
+    "REM": "Set candle to one of 1Min, 5Min, 10Min to download respective candles",
+    "REM": "If this is set, downloaded data will be stored in",
+    "REM": "<tld>/NSE/historical/<candle>/{symbol}, else",
+    "REM": "downloaded data will be 1Min granularity and will be stored in",
+    "REM": "<tld>/NSE/historical/{symbol}",
+    "Xcandle": "1Min",
+
+    "Xforce_startyear": "2016",
+    "Xforce_endyear": "2023",
+
+    "Xstocklist_csv": "NIFTY_100.csv",
+    "stocklist_csv": "NIFTY_50.csv",
+    "Xstocklist_csv": "one.csv",
+
+    "REM": "If set pyhistorical only tops up candle data for the current year, from",
+    "REM": "the last available 1Min candle till the last 1Min candle",
+    "REM": "This is useful when pylive crashes during the day and we need to quickly",
+    "REM": "top up historical data till the last 1Min candle available for the day",
+    "REM": "Better way is to leave this unset and use the -l/--live option",
+    "topup_live_historical": "1True",
+
+    "broker": {
+        "selection": "angelone",
+        "angelone": {
+            "account": {
+                "api_name": "historical",
+                "user_name": "",
+                "password": "",
+                "api_key": "",
+                "token": ""
+            }
+        },
+        "zerodha": {
+            "account": {
+                "api_key": "",
+                "api_secret": ""
+            }
+        }
+    }
+}

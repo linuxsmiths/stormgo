@@ -1,0 +1,6 @@
+{
+    "REM": "Candle size to plot, one of 5Min, 15Min, 1D",
+    "REM": "This is used only if there's no analytics data to print",
+    "REM": "else it's deduced from the analytics csv file",
+    "cdlsz": "1D"
+}

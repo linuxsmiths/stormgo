@@ -1,0 +1,53 @@
+Following needs to be done for performing live trading using pylive:
+
+1. Need to make sure historical data in $tld is uptodate till the last trading
+   day. This can be done by running pyhistorical/main.py after end of last
+   trading day and start of the new trading day. This will get the 1Min tick
+   data for that day, or any other missing day.
+   Setup a cron job to run at 6:00PM everyday.
+
+2. The finalized historical data needs to be re-generated to include this latest
+   data. This can be done by running pyprocess.
+   The above cron job, after downloading the historical data, runs pyprocess to
+   update the finalized data.
+   Note: We can later optimize it to not run for the entire historical data.
+
+   The cron job also generates the following file
+   $tld/NSE/historical/$stock/$stock.prelive.csv
+   which contains the previous 1 days worth of 1Min candles.
+   This will be used by pyprocess (live) to generate the live.xMin.csv files
+   in Step3.
+
+3. When pylive is run it'll start querying ticks from the broker and saving 1Min
+   ticks in $tld/NSE/historical/$stock/$stock.live.csv. After saving every new
+   1Min tick it'll run pyprocess in "live" mode where it just goes over the
+   live.csv files for each stock and creates/updates the following files:
+   $tld/NSE/historical/$stock/$stock.final.live.1Min.csv
+   $tld/NSE/historical/$stock/$stock.final.live.5Min.csv
+   $tld/NSE/historical/$stock/$stock.final.live.10Min.csv
+   $tld/NSE/historical/$stock/$stock.final.live.15Min.csv
+   After updating these files it'll send a SIGHUP to the engine asking to reload
+   live aggregated data so that it has uptodate intraday aggregates it may need
+   for its strategy analysis. Note that the 1D aggregates have already been
+   updated in Step2 so engine must have the latest daily aggregates. It just
+   needs to update the intraday aggregates.
+   Since generating aggregates needs some historical data, and for intraday
+   aggregates we need at most 1 day worth of 1Min candles, pyprocess (live)
+   will need previous days 1Min candle data too. See Step2 how that data is
+   available in $stock.prelive.csv file.
+   When engine gets the SIGHUP it loads the data from $stock.final.live.xMin.csv
+   files. It carefully updates the BTDataFrame so that only the new entries are
+   added.
+
+4. If there is a new candle added as per the config.tick engine config, the SIGHUP
+   handler will also run analyze on the new tick candle. This may generate a new
+   Order which engine will convey by writing a file in pylive/orders/generated.
+   pylive will be monitoring this directory using dnotify and as soon as a newly
+   generated Order is written to this directory, it reads the information about
+   the Order and places it with the Broker using its APIs. Successfully placed
+   orders are moved to pylive/orders/placed and these are the orders which pylive
+   will be periodically querying the status from the Broker. If an order is executed
+   it's moved to pylive/orders/executed. Though pylive will place a BO (bracket order)
+   with both target and stoploss price, it will also track all placed orders for
+   sudden changes which might call for a foreclosure. Also it needs to squareoff
+   these orders before 3:15PM.

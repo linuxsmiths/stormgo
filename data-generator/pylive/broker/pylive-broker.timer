@@ -1,0 +1,25 @@
+[Unit]
+Description=Fetch live ticks, call pyprocess to generate aggregate data, wakeup engine to process it
+# Allow manual starts
+RefuseManualStart=no
+# Allow manual stops
+RefuseManualStop=no
+
+[Timer]
+#Execute job if it missed a run due to machine being off
+Persistent=true
+
+#Run 120 seconds after boot for the first time
+OnBootSec=120
+
+#
+# Run at 7:00 AM every day Monday to Friday
+# pyhistorical starts @ 06:00 and it takes few mins, pylive must start after
+# that.
+OnCalendar=Mon..Fri *-*-* 07:00:00
+
+#File describing job to execute
+Unit=pylive-broker.service
+
+[Install]
+WantedBy=timers.target

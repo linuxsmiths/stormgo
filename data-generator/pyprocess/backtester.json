@@ -1,0 +1,39 @@
+{
+    "REM": "This is the pyprocess config file",
+    "REM": "Most of the config is shared with engine",
+    "REM": "Most importantly logfile is shared which gets all the logs in one place",
+    "REM": "Anything added here will override the corresponding engine config value",
+
+    "REM": "pyprocess logs are sent to $logdir/$logfile where logdir is defined in",
+    "REM": "engine/backtester.json and logfile is defined here",
+    "REM": "If $logfile is null then logs are sent to /dev/null and dropped",
+    "REM": "If $logfile is tty then logs are sent to /dev/tty and appear on console",
+    "Xlogfile": "tty",
+    "logfile": "pyprocess.log",
+
+    "verbose": "True",
+    "force": "True",
+
+    "REM": "If set, pyprocess processes live data and not the historical data",
+    "REM": "Better way is to leave this unset and use the -l/--live option",
+    "process_live_data": "1True",
+
+    "REM": "See details in config.py",
+    "REM": "SET THIS TO TRUE IF THERE ARE (FEW) MISSING CANDLES IN A DAY",
+    "REM": "AngelOne historical data has been seen to have missing candles",
+    "calculate_epoch_after_aggregation": "True",
+
+    "REM": "Omit days with less than 375x1Min candles",
+    "REM": "Watch out if it reduces too many days",
+    "REM": "See details in config.py",
+    "REM": "DO NOT SET THIS TO TRUE AS IT WILL REMOVE MANY DAYS FROM 1D AGGREGATE",
+    "REM": "AND WILL REDUCE NUMBER OF STOCKS WE CAN BACKTEST",
+    "omit_partial_days": "1True",
+
+    "REM": "Candle sizes for which pyprocess must generate aggregate data",
+    "REM": "*** THIS IS IGNORED IN LIVE MODE ***",
+    "REM": "1Min candle can be too many which may increase memory utilization of the",
+    "REM": "backtester and also space and time increase by pyprocess. Use judiciously.",
+    "candles": ["1Min", "3Min", "5Min", "10Min", "15Min", "1D", "7D", "30D", "90D"],
+    "Xcandles": ["1D", "7D", "30D", "90D"]
+}

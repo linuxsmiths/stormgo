@@ -1,0 +1,22 @@
+[Unit]
+Description=Update historical data till last trading day and generate aggregate data
+# Allow manual starts
+RefuseManualStart=no
+# Allow manual stops
+RefuseManualStop=no
+
+[Timer]
+#Execute job if it missed a run due to machine being off
+Persistent=true
+
+#Run 120 seconds after boot for the first time
+OnBootSec=120
+
+#Run at 6:00 AM every day Monday to Friday
+OnCalendar=Mon..Fri *-*-* 06:00:00
+
+#File describing job to execute
+Unit=pylive-cron.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,39 @@
+{
+    "REM": "This is the pylive config file",
+    "REM": "Most of the config is shared with engine",
+    "REM": "Anything added here will override the corresponding engine config value",
+
+    "REM": "pylive logs are sent to $logdir/$logfile where logdir is defined in",
+    "REM": "engine/backtester.json and logfile is defined here",
+    "REM": "If $logfile is null then logs are sent to /dev/null and dropped",
+    "REM": "If $logfile is tty then logs are sent to /dev/tty and appear on console",
+    "Xlogfile": "tty",
+    "logfile": "pylive.log",
+
+    "REM": "Loading angelone_instruments.json has been seen to be flaky, sometimes the",
+    "REM": "download fails while sometimes the new file has some missing tokens.",
+    "REM": "Since NIFTY_50 data is not likely to change on a daily basis avoid loading",
+    "REM": "angelone_instruments.json and instead always use the ref file.",
+    "REM": "Once we start using symbols outside NIFTY_50 or if NIFTY_50 has a change",
+    "REM": "then we should reload the instruments data",
+    "skip_load_instruments_json": "True",
+
+    "broker": {
+        "selection": "angelone",
+        "angelone": {
+            "account": {
+                "api_name": "tradingapi",
+                "user_name": "",
+                "password": "",
+                "api_key": "",
+                "token": ""
+            }
+        },
+        "zerodha": {
+            "account": {
+                "api_key": "",
+                "api_secret": ""
+            }
+        }
+    }
+}

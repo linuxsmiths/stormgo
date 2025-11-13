@@ -1,0 +1,4 @@
+Need to make sure pylive/cron/main.py is run at 6:00 AM every morning,
+Monday to Friday. For systemd based systems this can be done using systemd
+timers for which the config files are added. For non-systemd systems we have
+to use cron or some other mechanism.

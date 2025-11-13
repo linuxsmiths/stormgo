@@ -1,0 +1,13 @@
+[Unit]
+Description=Update historical data till last trading day and generate aggregate data
+# Don't restart if it fails 5 times within 30 secs.
+StartLimitIntervalSec=30
+StartLimitBurst=5
+
+[Service]
+Environment="RUNNING_FROM_SYSTEMD=1"
+ExecStart=/usr/sbin/pylive-cron
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

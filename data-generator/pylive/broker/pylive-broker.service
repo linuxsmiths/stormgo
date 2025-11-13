@@ -1,0 +1,14 @@
+[Unit]
+Description=Fetch live ticks, call pyprocess to generate aggregate data, wakeup engine to process it
+# Don't restart if it fails 5 times within 30 secs.
+StartLimitIntervalSec=30
+StartLimitBurst=5
+
+[Service]
+Environment="RUNNING_FROM_SYSTEMD=1"
+ExecStart=/usr/sbin/pylive-broker
+# Don't restart on successful exit as we do that at the end of trading.
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

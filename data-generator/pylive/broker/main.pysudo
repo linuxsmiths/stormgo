@@ -1,0 +1,1046 @@
+#include "BTDataFrame.h"
+#include "BTDate.h"
+#include "Candle.h"
+#include <fstream>
+#include <sstream>
+#include <iostream>
+#include <filesystem>
+#include <regex>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+
+namespace bt {
+
+/**
+ * One per column - defines the column.
+ */
+struct col_spec
+{
+        // Name of the column.
+        std::string m_name;
+
+        /*
+         * Type of column. We only ever use "double".
+         * "string" is used only for the "Date" column.
+         */
+        std::string m_type;
+
+        /*
+         * To avoid a string comparison for every row we save this boolean
+         * when processing the header.
+         */
+        bool m_type_is_string;
+
+        // Number of rows.
+        int m_size;
+};
+
+/**
+ * Given the header string of the following form, populate 'colspecs' with
+ * details about each column.
+ *
+ * "INDEX:38150:<double>,Date:38150:<string>,Open:38150:<double>,High:38150:<double>,Low:38150:<double>,Close:38150:<double>,Volume:38150:<double>,..."
+ *
+ * The populated entries are in the same order as they appear in the header string.
+ */
+static void populate_spec_from_header(std::vector<col_spec>& colspecs,
+                                      std::string header)
+{
+        assert(colspecs.empty());
+        assert(!header.empty());
+
+        enum class ParserState {
+                READING_NAME,
+                READING_SIZE,
+                READING_TYPE
+        };
+
+        ParserState pstate = ParserState::READING_NAME;
+        char *str = header.data();
+
+        // Pointer to start of current token.
+        const char *curtok = str;
+        struct col_spec curspec;
+
+        for (int i = 0; i < header.size(); i++) {
+                // We shouldn't have any spaces anywhere in the csv file.
+                assert(!std::isspace(str[i]));
+
+                switch (pstate) {
+                        case ParserState::READING_NAME:
+                        {
+                                if (str[i] != ':') {
+                                        continue;
+                                }
+                                // Terminate so that 'curtok' can read it.
+                                str[i] = '\0';
+
+                                /*
+                                 * This will copy curtok to m_name so curtok
+                                 * can change afterwards.
+                                 */
+                                curspec.m_name = curtok;
+
+                                // Prepare to point to the next token.
+                                curtok = str + i + 1;
+                                pstate = ParserState::READING_SIZE;
+                                break;
+                        }
+                        case ParserState::READING_SIZE:
+                        {
+                                if (str[i] != ':') {
+                                        continue;
+                                }
+                                str[i] = '\0';
+
+                                /*
+                                 * Size should be an integral value with no
+                                 * other non-numeric character.
+                                 */
+                                char *endptr = nullptr;
+                                curspec.m_size = std::strtol(curtok, &endptr, 10);
+                                if (endptr[0] != 0) {
+                                        BTLogE("Junk at end of row data, "
+                                               "token=%s, junk=%s, colname=%s",
+                                               curtok, endptr, curspec.m_name);
+                                        assert(false);
+                                }
+                                assert(curspec.m_size > 0);
+
+                                // All columns must be same size.
+                                if (!colspecs.empty()) {
+                                        assert(curspec.m_size == colspecs[0].m_size);
+                                }
+
+                                // Next token points beyond ":<".
+                                curtok = str + i + 2;
+                                pstate = ParserState::READING_TYPE;
+                                i++; // Skip '<' before the type.
+                                if (str[i] != '<') {
+                                        BTLogE("Missing '<', found '%c'",
+                                               str[i]);
+                                        assert(false);
+                                }
+                                break;
+                        }
+                        case ParserState::READING_TYPE:
+                        {
+                                if (str[i] != '>') {
+                                        continue;
+                                }
+                                str[i] = '\0';
+                                curspec.m_type = curtok;
+                                curspec.m_type_is_string =
+                                        (curspec.m_type == "string");
+
+                                /*
+                                 * Only valid types are "double" and "string"
+                                 * "string" only for "Date" and "double" for
+                                 * rest.
+                                 */
+                                assert (curspec.m_type_is_string ||
+                                                (curspec.m_type == "double"));
+
+                                // Next token points beyond ">,".
+                                curtok = str + i + 2;
+
+                                // One more col_spec ready.
+                                colspecs.emplace_back(curspec);
+
+                                // Prepare for the next col_spec.
+                                pstate = ParserState::READING_NAME;
+                                i++; // Skip ",".
+
+                                /*
+                                 * Next token MUST be ',' unless we have
+                                 * reached end of line.
+                                 */
+                                if ((str[i] != ',') && (i != header.size())) {
+                                        BTLogE("Missing ',' after '>', found "
+                                               "'%c'", str[i]);
+                                        assert(false);
+                                }
+                                break;
+                        }
+                }
+        }
+
+        // header should have complete entries.
+        assert(pstate == ParserState::READING_NAME);
+
+        // At least one column.
+        assert(colspecs.size() > 0);
+
+        // First column MUST be "INDEX" of type "double".
+        assert(colspecs[0].m_name == "INDEX");
+        assert(colspecs[0].m_type == "double");
+        assert(colspecs[0].m_type_is_string == false);
+
+        // Second column MUST be "Date" of type "string".
+        assert(colspecs[1].m_name == "Date");
+        assert(colspecs[1].m_type == "string");
+        assert(colspecs[1].m_type_is_string == true);
+}
+
+/**
+ * Read stock data from csv file and populate m_columns and m_index.
+ *
+ * Note: We don't allow any deviation from the expected format.
+ *       The data should be sorted by time, as we simply load it into the
+ *       vector.
+ *
+ * TODO: Accept start_epoch parameter and load only rows with epoch greater
+ *       than start_epoch. Currently we load all the rows even though we may
+ *       not be using those, depending on the start epoch that we use for
+ *       backtesting. For non-live mode we want the ability to change
+ *       start_epoch and end_epoch in the config file so we want to load all
+ *       the rows, but at least for live mode we don't need that and we can
+ *       save lot of ram by loading only the rows after start_epoch.
+ */
+void BTDataFrame::read_csv(const char *csvfile_name, int cdlsz, bool is_live)
+{
+        assert(csvfile_name != nullptr);
+
+        // Smallest candle size in seconds is 60.
+        assert(cdlsz >= 60);
+
+        /*
+         * Typically at least .csv in the end.
+         * Nothing hard and fast about the naming, just to catch any undesired
+         * badness.
+         */
+        assert(strlen(csvfile_name) > 4);
+
+        /*
+         * In live mode we update DataFrame from live data in
+         * $stock.final.live.<XMin>.csv. If that has not changed since the
+         * last time this DataFrame was updated, skip loading it. We do this
+         * because we have an assert later (see ALOR) to ensure that we got at
+         * least one new tick.
+         */
+        if (is_live) {
+                char pattern[1000];
+                const int cnt = std::snprintf(pattern, sizeof(pattern),
+                                ".*.final.%s%s.csv", // Pattern.
+                                is_live ? "live." : "",
+                                candle_size_to_str((CandleSize) cdlsz).c_str());
+                // Make sure the space was not short.
+                assert(cnt > 0 && cnt < sizeof(pattern));
+
+                const std::regex re_expr(pattern);
+                std::smatch sm;
+
+                // csvfile_name must be correct for the cdlsz requested.
+                const std::string filename = csvfile_name;
+                assert(std::regex_match(filename, sm, re_expr));
+
+                struct stat sb;
+                if (::stat(csvfile_name, &sb) != 0) {
+                        if (errno == ENOENT) {
+                                BTLogE("csvfile %s not found", csvfile_name);
+                                assert(0);
+                        }
+                        BTLogE("stat(%s) failed: %s (%d)\n",
+                                        csvfile_name, strerror(errno), errno);
+                        assert(0);
+                }
+
+                const uint64_t mtime =
+                        (sb.st_mtim.tv_sec * 1000'000'000) + sb.st_mtim.tv_nsec;
+
+                /*
+                 * Skip processing the ticks if the tick file has not changed
+                 * since the last time we processed it.
+                 * We also compare file size, w/o that we still get stumped since
+                 * pyprocess may generate aggregate data even though there's no
+                 * new tick which may cause mtime to change.
+                 *
+                 * Note: Just size comparison should be enough as new ticks can
+                 *       only be added and never old ticks removed.
+                 * Note: This time is in local timezone (not UTC), hence we
+                 *       pass true as second argument to epoch_to_str().
+                 */
+                if (mtime <= m_lmt) {
+                        BTLogE("csvfile %s has mtime %lu nsecs [%s] <= lmt "
+                               "(%lu nsecs [%s]), skipping!",
+                               csvfile_name,
+                               mtime,
+                               BTDate::epoch_to_str(mtime / 1000'000'000, true).c_str(),
+                               m_lmt,
+                               BTDate::epoch_to_str(m_lmt / 1000'000'000, true).c_str());
+
+                        /*
+                         * mtime must never go back normally, unless someone
+                         * changes it explicitly, in which case we want to
+                         * know.
+                         */
+                        assert(mtime == m_lmt);
+                        return;
+                }
+
+                // Size won't reduce.
+                assert(sb.st_size >= m_size);
+
+                if (sb.st_size == m_size) {
+                        BTLogE("csvfile %s has size %d, same as last time, skipping!",
+                                        csvfile_name, m_size);
+                        return;
+                }
+
+                BTLogW("csvfile %s, m_lmt changed [%lu (%s) -> %lu (%s)], "
+                       "m_size changed [%d -> %d]",
+                       csvfile_name,
+                       m_lmt,
+                       BTDate::epoch_to_str(m_lmt / 1000'000'000, true).c_str(),
+                       mtime,
+                       BTDate::epoch_to_str(mtime / 1000'000'000, true).c_str(),
+                       m_size,
+                       sb.st_size);
+
+                m_lmt = mtime;
+                m_size = sb.st_size;
+        }
+
+        std::ifstream csvfile(csvfile_name);
+        bool header_read = false;
+        std::vector<col_spec> colspecs;
+
+        std::string line;
+        int row_num = 0;
+        int Close_col = 0;
+        int Volume_col = 0;
+
+        /*
+         * Number of rows loaded by all prior calls to read_csv().
+         * Any new rows in this call would be loaded after this row.
+         * is_live MUST NOT be true for the very first call and similarly if
+         * we are called for non-first time then it MUST be only for loading
+         * live data. This is because we keep preprocessed historical data in
+         * single files, f.e., all 5Min candles for TCS will be in the file
+         * TCS.final.5Min.csv.
+         * If this is not the first time, sanitize various properties.
+         */
+        const int old_size = m_index.size();
+
+        assert(is_live == (old_size > 0));
+        assert(is_live == (m_total_volume > 0));
+        assert(is_live == (m_total_price > 0));
+
+        /*
+         * Go over all rows in csvfile_name, skipping commented lines,
+         * treating the first uncommented line as the header and using that to
+         * find out the names of columns and their size, and then parsing all
+         * other lines as row data according to the header, breaking it into
+         * columns and for each column add the new row data.
+         * Data present in csv file is supposed to be sorted.
+         *
+         * When adding live data, some initial data present in csv file will be
+         * overlapping with some existing data at the end. This is because
+         * live data csv always contains the prelive data for previous day +
+         * live data till the last tick. Out of this only the last live row is
+         * new and will be added, everything else will be an overlap.
+         */
+        while (std::getline(csvfile, line)) {
+#if 1
+                /*
+                 * XXX
+                 * Sometimes I've seen crashes due to line having more comma
+                 * separated elements than columns. Since line is in-place
+                 * modified we make a copy of it to see the actual line read
+                 * in the debugger in case of such a crash.
+                 *
+                 * Remove it once the issue is resolved.
+                 * XXX
+                 */
+                const std::string copy_of_line = line;
+#endif
+
+                // Skip commented lines.
+                if (line[0] == '#')
+                        continue;
+
+                if (!header_read) {
+                        header_read = true;
+                        /*
+                         * Prepare colspecs from the header line.
+                         * We will then use that to interpret other rows.
+                         */
+                        populate_spec_from_header(colspecs, line);
+
+                        assert(colspecs[0].m_name == "INDEX");
+
+                        // We should be called with at least 1 row.
+                        assert(colspecs[0].m_size > 0);
+
+                        /*
+                         * Live mode can only update existing dataframe,
+                         * whereas in non-live mode the dataframe must not
+                         * exist.
+                         */
+                        if (is_live) {
+                                assert(m_index.size() > 0);
+
+                                /*
+                                 * Resize the index column vector to
+                                 * accomodate new data from this live csv.
+                                 * There will likely be some overlap between
+                                 * the tail of existing dataframe and the head
+                                 * of the new dataframe, so total size would
+                                 * be less than sum of the two, but we start
+                                 * with that and later once we know the correct
+                                 * size we will update it.
+                                 */
+                                /*
+                                 * XXX
+                                 * If we resize it here, find_row() below
+                                 * doesn't work because the vector needs to be
+                                 * correctly sorted for std::upper_bound() to
+                                 * work.
+                                 * XXX
+                                 *
+                                 * Search for "RIC" to see how it's done when we
+                                 * read the first row.
+                                 */
+#if 0
+                                m_index.resize(m_index.size() + colspecs[0].m_size);
+#endif
+
+                                /*
+                                 * Live data MUST have the exact same columns
+                                 * as what is already loaded. It can only
+                                 * provide more rows for the same columns and
+                                 * not provide new columns.
+                                 * In the following for loop we match the
+                                 * exact column names.
+                                 * -1 since m_columns does not have the INDEX
+                                 * column.
+                                 *
+                                 * XXX This assert fails when cfg.analyze_stock is set,
+                                 *     since in that case m_columns has got
+                                 *     many more columns (various analytics
+                                 *     columns are added).
+                                 *     See df_analytics_save_order(), f.e.
+                                 */
+                                assert(m_columns.size() == colspecs.size()-1);
+                        } else {
+                                assert(m_index.size() == 0);
+                                m_index.resize(colspecs[0].m_size);
+                        }
+
+                        /*
+                         * Process rest of the columns.
+                         */
+                        for (int i = 1; i < colspecs.size(); i++) {
+                                // All columns MUST have same rows..
+                                assert(colspecs[i].m_size == colspecs[0].m_size);
+
+                                if (is_live) {
+                                        /*
+                                         * Live data MUST update *all* the same
+                                         * columns which were present in the
+                                         * original dataframe, IOW all columns
+                                         * in live data must be present in the
+                                         * original dataframe.
+                                         */
+                                        assert(m_columns.find(colspecs[i].m_name) !=
+                                                m_columns.end());
+
+                                        // std::vector for holding this column's data.
+                                        std::vector<double>& _col =
+                                                m_columns[colspecs[i].m_name];
+                                        assert(_col.size() > 0);
+                                        // Must have same rows as index column.
+                                        assert(_col.size() == old_size);
+
+                                        /*
+                                         * Resize this column vector to
+                                         * accomodate new data from the live csv.
+                                         * Due to some overlap between
+                                         * existing column data and live data
+                                         * the final size will be less than
+                                         * this, we will update it in the end
+                                         * once we know the exact size after
+                                         * adding new row data from live data.
+                                         *
+                                         * XXX This shows up as using lot of memory
+                                         *     in valgrind.
+                                         *     We do a shrink_to_fit() later
+                                         *     to release the memory to the
+                                         *     OS, see if it helps.
+                                         */
+                                        _col.resize(_col.size() + colspecs[i].m_size);
+                                } else {
+                                        /*
+                                         * XXX This shows up as using lot of memory
+                                         *     in valgrind.
+                                         */
+                                        const auto& it = m_columns.emplace(
+                                                        colspecs[i].m_name,
+                                                        std::vector<double>(
+                                                                colspecs[i].m_size));
+                                        /*
+                                         * Column must not already be present,
+                                         * i.e., every column name must be unique.
+                                         */
+                                        assert(it.second == true);
+                                        assert(m_columns[colspecs[i].m_name].size() ==
+                                                        colspecs[i].m_size);
+                                }
+
+                                // Column names MUST be unique.
+                                assert(colspecs[i].m_name != "INDEX");
+
+                                /*
+                                 * Save integer column indices to avoid costly
+                                 * string comparison in the per-row code
+                                 * below.
+                                 */
+                                if (colspecs[i].m_name == "Close") {
+                                        Close_col = i;
+                                } else if (colspecs[i].m_name == "Volume") {
+                                        Volume_col = i;
+                                }
+                        }
+                        // "Close" and "Volume" columns MUST be present.
+                        assert(Close_col != 0);
+                        assert(Volume_col != 0);
+                } else {
+                        // Non-header row.
+
+                        char *str = line.data();
+                        const char *curtok = str;
+                        int col_idx = 0;
+                        /*
+                         * Go over all columns in this row and add their data
+                         * to respective column vectors.
+                         */
+                        for (int i = 0; i < line.size(); i++) {
+                                /*
+                                 * For the last comma separated value, we don't
+                                 * need to null terminate it, it already has the
+                                 * eol's null termination.
+                                 */
+                                if (i != line.size()-1) {
+                                        if (str[i] != ',') {
+                                                continue;
+                                        }
+                                        str[i] = '\0';
+                                }
+
+                                /*
+                                 * First column is the INDEX column which
+                                 * holds the epoch. If we are updating
+                                 * existing dataframe using live data there
+                                 * will be an overlap between the tail of
+                                 * existing dataframe and the head of the new
+                                 * dataframe. We need to find out the row
+                                 * number in existing dataframe corresponding
+                                 * to the epoch value from the first row in
+                                 * the live data. From that row onwards till
+                                 * we have overlapping epoch values we skip
+                                 * and then add the remaining data after the
+                                 * last row in the existing dataframe.
+                                 */
+                                if (col_idx == 0) {
+                                        if (is_live) {
+                                                const epoch_t epoch =
+                                                        strtod(curtok, nullptr);
+                                                assert(epoch > 0);
+                                                assert(is_epoch_valid(epoch));
+
+                                                /*
+                                                 * Live data MUST be (much) after the
+                                                 * first epoch in existing data.
+                                                 */
+                                                assert(epoch > m_index[0]);
+
+                                                if (row_num == 0) {
+                                                        /*
+                                                         * epoch will correspond
+                                                         * to prelive data which
+                                                         * is 1-day overlap with
+                                                         * existing data, hence
+                                                         * MUST be present.
+                                                         */
+                                                        row_num = find_row(epoch);
+                                                        // Must find the exact epoch.
+                                                        assert(row_num != -1);
+                                                        assert(m_index[row_num] == epoch);
+
+                                                        /*
+                                                         * Some (but not all) of live data must
+                                                         * overlap with existing data. To be
+                                                         * precise the prelive part is the one
+                                                         * that overlaps. The second assert
+                                                         * is to ensure that $stock.live.csv
+                                                         * has at least one row. It will fail
+                                                         * if only prelive.csv is present.
+                                                         */
+                                                        assert(row_num < old_size);
+                                                        //assert(row_num >
+                                                        assert(row_num >=
+                                                               (old_size - colspecs[0].m_size));
+
+                                                        /*
+                                                         * RIC
+                                                         * Resize index column now that we
+                                                         * have searched for epoch to find
+                                                         * where to start adding from.
+                                                         * Read comments at RIC above.
+                                                         */
+                                                        assert(colspecs[0].m_size > 0);
+
+                                                        const int old_capacity =
+                                                                m_index.capacity();
+                                                        m_index.resize(m_index.size() +
+                                                                       colspecs[0].m_size);
+                                                        const int new_capacity =
+                                                                m_index.capacity();
+                                                        BTLogW("[%s] m_index.resize(+%d) "
+                                                               "increased capacity from "
+                                                               "(%d -> %d), %d elements",
+                                                               csvfile_name,
+                                                               colspecs[0].m_size,
+                                                               old_capacity, new_capacity,
+                                                               new_capacity-old_capacity);
+                                                }
+
+                                                /*
+                                                 * ANDE
+                                                 * Index epochs MUST be strictly increasing,
+                                                 * and two adjacent entries MUST be spaced
+                                                 * apart by a whole number of candles. With
+                                                 * no missing candles it must be spaced apart
+                                                 * by 'cdlsz' but in case of missing candles
+                                                 * it can be more.
+                                                 *
+                                                 * Old data is only upto 'old_size', after that
+                                                 * it's 0's and we will fill it with live
+                                                 * data below.
+                                                 */
+                                                if (row_num >= old_size) {
+                                                        assert(m_index[row_num] == 0);
+                                                } else {
+                                                        assert(m_index[row_num] >=
+                                                            (m_index[row_num-1] + cdlsz));
+                                                        assert(((int) (m_index[row_num] -
+                                                            m_index[row_num-1]) % cdlsz) == 0);
+                                                }
+
+                                                /*
+                                                 * Keep skipping till we come
+                                                 * across a new row in live data.
+                                                 * After that it should be all
+                                                 * new data.
+                                                 *
+                                                 * TODO: Ensure all other
+                                                 *       column values are also
+                                                 *       same in overlapping rows.
+                                                 */
+                                                if (m_index[row_num] == epoch) {
+                                                        /*
+                                                         * XXX
+                                                         * This Skipping...  comment
+                                                         * swamps the logs when we enable
+                                                         * verbose logging for the engine.
+                                                         */
+#if 1
+                                                        BTLogV("Skipping epoch %lu "
+                                                               "from %s (row_num=%d)",
+                                                               epoch, csvfile_name, row_num);
+#endif
+                                                        goto next_row;
+                                                }
+
+                                                /*
+                                                 * Once overlap ends, then
+                                                 * m_index will have 0's and
+                                                 * we will fill them with live
+                                                 * data (see below).
+                                                 *
+                                                 * XXX
+                                                 * If this assert fails it
+                                                 * means that while we were
+                                                 * matching entries from
+                                                 * <stock>.final.live.<XMin>.csv
+                                                 * into m_index[], we came
+                                                 * across an entry which is
+                                                 * not matching between the
+                                                 * two. This most likely means
+                                                 * that final.live.... doesn't
+                                                 * have an entry that m_index[]
+                                                 * has.
+                                                 * f.e., final.live....
+                                                 * doesn't have entry for
+                                                 * 11:05 while m_index[] has
+                                                 * and hence this assert
+                                                 * fails.
+                                                 *
+1699355040,2023-11-07 11:04:00,24290,24290,24282.55,24283.4,24
+1699355160,2023-11-07 11:06:00,24296.85,24297.95,24284.35,24284.45,16
+                                                 *
+                                                 * Now the question is - why
+                                                 * does m_index[] have that
+                                                 * entry while final.live...
+                                                 * doesn't have, since
+                                                 * m_index[] would have
+                                                 * been populated from
+                                                 * final.live.... entries
+                                                 * only. This has been seen to
+                                                 * happen when pylive restarts
+                                                 * and then it re-creates the
+                                                 * final.live... files.
+                                                 * Previously it had 11:05,
+                                                 * now it doesn't have!!
+                                                 *
+                                                 * THIS MEANS EVERYTIME PYLIVE
+                                                 * IS RESTARTED, ENGINE
+                                                 * MUST BE RESTARTED TOO!
+                                                 *
+                                                 * In this case pylive was
+                                                 * restarted because of n/w
+                                                 * issue which caused the
+                                                 * "Future tick received..."
+                                                 * assert to fail.
+                                                 */
+                                                assert(m_index[row_num] == 0);
+
+                                                BTLogW("Adding NEW live epoch %lu "
+                                                       "from %s",
+                                                       epoch, csvfile_name);
+                                                /*
+                                                 * The first non-overlapping
+                                                 * epoch MUST be after the
+                                                 * entire old data, i.e., we
+                                                 * should not have some
+                                                 * intermediate row which was
+                                                 * absent in older data but
+                                                 * present in the live data.
+                                                 * Live data is also made from
+                                                 * some existing data and some
+                                                 * new data so it cannot have
+                                                 * some epoch which was
+                                                 * missing in existing
+                                                 * historical data.
+                                                 */
+                                                assert(row_num >= old_size);
+                                        }
+
+                                        /*
+                                         * First column is INDEX and that is
+                                         * saved in the special m_index
+                                         * vector.
+                                         */
+                                        assert(row_num < m_index.size());
+                                        m_index[row_num] = strtod(curtok, nullptr);
+
+                                        // Ref ANDE above.
+                                        if (row_num > 0) {
+                                                assert(m_index[row_num] >=
+                                                       (m_index[row_num-1] + cdlsz));
+                                                assert(((int) (m_index[row_num] -
+                                                         m_index[row_num-1]) % cdlsz) == 0);
+                                        }
+                                } else {
+                                        /*
+                                         * Search for the column vector for
+                                         * the given column name, so that we
+                                         * can then add the new row data to it.
+                                         */
+                                        std::vector<double>& vec =
+                                                m_columns[colspecs[col_idx].m_name];
+                                        /*
+                                         * Make sure it was present (and not newly
+                                         * created above)
+                                         */
+                                        assert(vec.size() != 0);
+
+                                        /*
+                                         * All columns are of type "double",
+                                         * other than "Date" which is of type
+                                         * "string", but we don't save it.
+                                         */
+                                        if (colspecs[col_idx].m_type_is_string) {
+                                                /*
+                                                 * Only string column is "Date",
+                                                 * and we ignore that.
+                                                 */
+                                                assert(colspecs[col_idx].m_type == "string");
+                                                assert(colspecs[col_idx].m_name == "Date");
+                                        } else {
+                                                /*
+                                                 * If not "string" it's "double".
+                                                 * Don't assert again, it's
+                                                 * already asserted in
+                                                 * populate_spec_from_header().
+                                                 */
+
+                                                assert(row_num < vec.size());
+                                                vec[row_num] = strtod(curtok, nullptr);
+
+                                                /*
+                                                 * None of the columns (aggregated or basic)
+                                                 * can have a -ve value.
+                                                 */
+                                                assert(vec[row_num] >= 0);
+
+                                                /*
+                                                 * Update max/min closing price for the stock.
+                                                 */
+                                                if (col_idx == Close_col) {
+                                                        m_total_price += vec[row_num];
+
+                                                        m_max_close_price =
+                                                            std::max(m_max_close_price,
+                                                                     RsToPrice(vec[row_num]));
+                                                        m_min_close_price =
+                                                            std::min(m_min_close_price,
+                                                                     RsToPrice(vec[row_num]));
+                                                } else if (col_idx == Volume_col) {
+                                                        m_total_volume += vec[row_num];
+                                                        /*
+                                                         * Avoid candle.m_v!=0 assert failures
+                                                         * in Strategy routines.
+                                                         */
+                                                        if (vec[row_num] == 0) {
+                                                                vec[row_num] = 1;
+                                                        }
+                                                }
+                                        }
+                                }
+                                curtok = str + i + 1;
+                                col_idx++;
+                        }
+next_row:
+                        row_num++;
+                }
+        }
+
+        if (is_live) {
+                /*
+                 * This data must have provided at least one new row, why else
+                 * we were called.
+                 * ALOR
+                 */
+                assert(row_num != 0);
+
+#if 1
+                // For debugging next time this issue happens.
+                if (row_num <= old_size) {
+                        BTLogE("row_num=%d old_size=%d", row_num, old_size);
+                        BTLogE("Saving snapshot of %s in /tmp", csvfile_name);
+                        std::filesystem::copy(csvfile_name, "/tmp");
+                }
+#endif
+
+                assert(row_num > old_size);
+
+                // row_num-1 is the epoch of the last tick added.
+                assert(m_index[row_num-1] != 0);
+
+                BTLogW("Added %d NEW live ticks (latest, %lu (%s)) from %s",
+                                (row_num-old_size),
+                                (unsigned long) m_index[row_num-1],
+                                BTDate::epoch_to_str(m_index[row_num-1]).c_str(),
+                                csvfile_name);
+
+                /*
+                 * Usually in live mode we should only add one new tick
+                 * everytime, since pyprocess must let engine know after
+                 * adding every tick and engine must add it before the next
+                 * tick (which will be at least one minute later).
+                 * In some cases if pylive crashes and then we restart it
+                 * after some time, it may have multiple ticks accumulated
+                 * which the engine must now add all at once.
+                 */
+#if 0
+                assert((row_num-old_size) == 1);
+#endif
+
+                /*
+                 * In case of live data there MUST be some overlap, hence the
+                 * last row added will still be less than the column size
+                 * (which was pessmistically increased), shrink it now.
+                 */
+                assert(row_num < m_index.size());
+                assert(m_index[row_num] == 0);
+
+                const int old_capacity = m_index.capacity();
+                m_index.resize(row_num);
+
+                /*
+                 * Release the memory to the system.
+                 * Note that this is a non-binding request, it may or may not
+                 * release the memory to the OS...
+                 */
+                m_index.shrink_to_fit();
+                const int new_capacity = m_index.capacity();
+
+                BTLogW("[%s] m_index.shrink_to_fit() reduced capacity from "
+                       "(%d -> %d), %d elements",
+                       csvfile_name, old_capacity, new_capacity,
+                       old_capacity-new_capacity);
+        } else {
+                assert(row_num == m_index.size());
+        }
+
+        // Shrink columns other than the INDEX column.
+        for (int i = 1; i < colspecs.size(); i++) {
+                std::vector<double>& _col =
+                        m_columns[colspecs[i].m_name];
+                if (is_live) {
+                        assert(row_num < _col.size());
+                        assert(_col[row_num] == 0);
+
+                        const int old_capacity = _col.capacity();
+                        _col.resize(row_num);
+                        _col.shrink_to_fit();
+                        const int new_capacity = _col.capacity();
+
+                        BTLogW("[%s] col %s shrink_to_fit() reduced capacity from "
+                               "(%d -> %d), %d elements",
+                               csvfile_name, colspecs[i].m_name.c_str(),
+                               old_capacity, new_capacity,
+                               old_capacity-new_capacity);
+                } else {
+                        assert(row_num == _col.size());
+                }
+        }
+
+        /*
+         * Go over the index data read and try to detect the candle size for
+         * this BTDataFrame.
+         */
+        if (!is_live) {
+                assert(m_cdlsz == 0);
+                m_cdlsz = detect_candle_size();
+                BTLogV("BTDataFrame read from %s has candle size %d secs",
+                                csvfile_name, m_cdlsz);
+                assert(is_candle_size_valid(m_cdlsz));
+        } else {
+                /*
+                 * TODO: Detect candle size of live data and assert it is same
+                 *       as m_cdlsz.
+                 */
+                assert(is_candle_size_valid(m_cdlsz));
+                BTLogV("BTDataFrame with candle size %d secs updated from "
+                       "live data %s (loaded %d new rows)",
+                       m_cdlsz, csvfile_name, (row_num-old_size));
+        }
+
+        // These must have been set above.
+        assert((m_max_close_price > 0) && (m_max_close_price < INFINITY<price_t>));
+        assert((m_min_close_price > 0) && (m_min_close_price < INFINITY<price_t>));
+        assert(m_max_close_price > m_min_close_price);
+
+        assert((m_total_price > 0) && (m_total_price < INFINITY<price_t>));
+        m_avg_price = RsToPrice(m_total_price) / row_num;
+
+        // It's a double with huge max value so no need to check for overflow.
+        assert(m_total_volume > 0);
+        m_avg_volume = m_total_volume / row_num;
+
+        /*
+         * Now populate Support/Resistance info.
+         */
+        const std::vector<double>& close = m_columns["Close"];
+        assert(!close.empty());
+        assert(close.size() == m_index.size());
+
+        /*
+         * Support/Resistance info won't change much in a day, so we can skip
+         * computing Support/Resistance for newly added sub-1D data.
+         */
+        if (!is_live) {
+                // Initialize SRInfo with min and max closing price.
+                m_sr.initialize(m_min_close_price, m_max_close_price);
+
+                /*
+                 * Populate Support/Resistance info by going over all closing prices
+                 * and checking if the price has acted as a Support or Resistance
+                 * anytime in the past.
+                 */
+                m_sr.populate(m_index, close);
+        }
+}
+
+/**
+ * Dump one or more columns of the BTDataFrame into the given csv
+ * file. The first column is always the Date column in string format.
+ */
+void BTDataFrame::write_csv(const char *csvfile_name,
+                            const std::vector<const char*>& col_names) const
+{
+        assert(csvfile_name != nullptr);
+
+        /*
+         * Typically at least .csv in the end.
+         * Nothing hard and fast about the naming, just to catch any undesired
+         * badness.
+         */
+        assert(strlen(csvfile_name) > 4);
+
+        std::ofstream csvfile(csvfile_name);
+
+        // At least one column (other than index) must be dumped.
+        assert(col_names.size() > 0);
+        // Can't ask for more than total columns.
+        assert(col_names.size() <= m_columns.size());
+
+        // Vector of columns that need to be dumped.
+        std::vector<std::vector<double>> cols;
+        // Index column.
+        const std::vector<double>& index = get_index();
+
+        /*
+         * Dump the header line. This contains the comma separated column
+         * names.
+         */
+        csvfile << "Date,";
+        for (int i = 0; i < col_names.size(); i++) {
+                const std::vector<double>& col = get_column(col_names[i]);
+                // All columns MUST have the same number of rows.
+                assert(col.size() == index.size());
+                cols.emplace_back(col);
+
+                csvfile << col_names[i];
+                // If not the last column, print a comma, else a newline.
+                if (i == col_names.size()-1) {
+                        csvfile << endl;
+                } else {
+                        csvfile << ",";
+                }
+        }
+
+        /*
+         * Now dump all the rows for all columns in that order.
+         */
+        for (int i = 0; i < m_index.size(); i++) {
+                // Date string.
+                csvfile << BTDate::epoch_to_str(index[i]) << ",";
+
+                // Followed by other requested columns.
+                for (int j = 0; j < cols.size(); j++) {
+                        /*
+                         * Avoid scientific notation and limit decimal digits
+                         * to 2.
+                         */
+                        if (cols[j][i] != (double)(uint64_t)cols[j][i]) {
+                                csvfile << std::fixed << std::setprecision(2) << cols[j][i];
+                        } else {
+                                csvfile << std::fixed << std::setprecision(0) << cols[j][i];
+                        }
+
+                        if (j == cols.size()-1) {
+                                csvfile << endl;
+                        } else {
+                                csvfile << ",";
+                        }
+                }
+        }
+}
+
+}

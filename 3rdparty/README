@@ -1,0 +1,42 @@
+This README contains instructions for managing the 3rd party libraries used.
+These are the libraries which need to be updated from their original sources.
+Run setup.sh in stormgo/3rdparty to setup the symlinks so that python3 can pick
+them up.
+
+smartapi-python
+===============
+The latest working version is checked in, so you use the checked in version.
+
+Instructions for udpating the checked-in working version if AngelOne updates the
+code.
+
+cd stormgo/3rdparty
+
+# clone from the smartapi repo.
+git clone https://github.com/angel-one/smartapi-python.git
+
+# rm .git directory so that git lets you checkin this version.
+rm -fr .git
+
+# then check if there are some local changes we need to make
+# grep for TOMAR in the above directory if you are doing a "git pull --rebase"
+# make sure those changes are there.
+
+# Alternatively you can copy specific files over the ones in
+# /home/tomar/exploits/StockMarket/zerodha/bot/gitrepo/stormgo/3rdparty/smartapi-python/SmartApi/
+# and then git commit them locally.
+
+# If the following symlink is not present, create it so that python3 can pick it.
+ln -s /home/tomar/exploits/StockMarket/zerodha/bot/gitrepo/stormgo/3rdparty/smartapi-python/SmartApi/ /usr/local/lib/python3.12/dist-packages
+
+nselib
+======
+# Download latest release from https://pypi.org/project/nselib/#files
+wget https://files.pythonhosted.org/packages/aa/90/4a936f5f9b8a309fb6fde5599194cd0344b68f62b1541da5f4f009dca03c/nselib-2.0.tar.gz
+
+# github page is at https://github.com/RuchiTanmay/nselib
+
+tar xvf nselib-2.0.tar.gz
+
+# If the following symlink is not present, create it so that python3 can pick it.
+ln -s /home/tomar/exploits/StockMarket/zerodha/bot/gitrepo/stormgo/3rdparty/nselib-2.0/nselib /usr/local/lib/python3.12/dist-packages
