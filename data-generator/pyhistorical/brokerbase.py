@@ -314,18 +314,29 @@ class BrokerBase(metaclass=abc.ABCMeta):
         # We do it for the entire range from first invalid to the end of
         # year to avoid multiple YF calls.
         #
-        if year == 2019:
-            to_date = ("01-08-%d" % year)
-            yf_from_date = "2019-08-02"
-            yf_to_date = "2019-12-31"
-        elif year == 2020:
-            to_date = ("14-07-%d" % year)
-            yf_from_date = "2020-07-15"
-            yf_to_date = "2020-12-31"
-        elif year == 2023:
-            to_date = ("20-07-%d" % year)
-            yf_from_date = "2023-07-21"
-            yf_to_date = "2023-12-31"
+        # Update Nov 2025:
+        # It seems NSE has fixed the missing Volume and OHLC data issues,
+        # so we don't need to do this special casing anymore.
+        # Also note that yahoo finance is ratelimiting all requests and not
+        # returning data.
+        #
+        if False:
+            if year == 2019:
+                to_date = ("01-08-%d" % year)
+                yf_from_date = "2019-08-02"
+                yf_to_date = "2019-12-31"
+            elif year == 2020:
+                to_date = ("14-07-%d" % year)
+                yf_from_date = "2020-07-15"
+                yf_to_date = "2020-12-31"
+            elif year == 2023:
+                to_date = ("20-07-%d" % year)
+                yf_from_date = "2023-07-21"
+                yf_to_date = "2023-12-31"
+            else:
+                to_date = ("31-12-%d" % year)
+                yf_from_date = None
+                yf_to_date = None
         else:
             to_date = ("31-12-%d" % year)
             yf_from_date = None
@@ -412,6 +423,16 @@ class BrokerBase(metaclass=abc.ABCMeta):
             provided then it returns a dataframe containing data in the requested
             range. 'year' and 'filename' are ignored in this case and MUST not be
             passed.
+
+
+            Update Nov 2025:
+            Yahoo finance seems to be ratelimiting requests and not returning any
+            data. It fails with the following exception:
+            YFRateLimitError: Too Many Requests. Rate limited. Try after a while.
+
+            Maybe this is temporary, but be mindful.
+            Anyways, now we don't need data from yahoo finance as NSE has fixed
+            its data issues.
         """
         # Either both should be None or both should be valid.
         assert((from_date is None) == (to_date is None))
